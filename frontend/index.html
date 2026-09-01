@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f0eee6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1f1e1d" media="(prefers-color-scheme: dark)" />
+    <meta
+      name="description"
+      content="Prizma — lokální router mezi free-tier LLM providery. Jeden prompt, ten správný model."
+    />
+    <!-- Referrer never leaves this machine anyway; saying so costs nothing. -->
+    <meta name="referrer" content="no-referrer" />
+    <!-- The prism mark, inlined so the tab icon needs no extra request. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' fill='none' stroke-linecap='round'%3E%3Cpath d='M1 19.5H13' stroke='%238a867c' stroke-width='2.4'/%3E%3Cpath d='M20 6.5 33.5 31.5H6.5Z' stroke='%238a867c' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M26.6 20.5 40 10.5' stroke='%23f2c879' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5 40 15.5' stroke='%23e59356' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5H40' stroke='%23d9635a' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5 40 25.5' stroke='%23a86fc4' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5 40 30.5' stroke='%235d9fd6' stroke-width='2.4'/%3E%3C/svg%3E"
+    />
+    <title>Prizma</title>
+    <!-- Applies a *forced* theme before the first paint. Without this, a user
+         who picked light on a dark OS would see one dark frame on every load,
+         which is the single most obvious "unfinished app" tell there is.
+         "System" needs nothing here: tokens.css does that in CSS alone. -->
+    <script>
+      try {
+        var t = localStorage.getItem("prizma.theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.dataset.theme = t;
+          var m = document.querySelector('meta[name="theme-color"]:not([media])');
+          if (!m) {
+            m = document.createElement("meta");
+            m.name = "theme-color";
+            document.head.appendChild(m);
+          }
+          m.content = t === "light" ? "#f0eee6" : "#1f1e1d";
+        }
+      } catch (e) {
+        /* Private mode or blocked storage — the OS preference still applies. */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

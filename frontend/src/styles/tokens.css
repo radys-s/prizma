@@ -1,0 +1,127 @@
+/* Design tokens — the single source of truth for colour, spacing and motion.
+   Nothing outside this file should contain a raw hex value.
+
+   Two themes, one declaration each. `light-dark(light, dark)` picks a value
+   from the *used* `color-scheme`, so the whole palette lives in one block and
+   the theme switch is a single attribute on <html>:
+
+     no attribute        -> follows the OS (`color-scheme: light dark`)
+     data-theme="light"  -> forced light
+     data-theme="dark"   -> forced dark
+
+   Written this way on purpose. The usual alternative — a `:root[data-theme]`
+   block plus a `@media (prefers-color-scheme: dark)` copy of it — means every
+   colour is written twice and the two halves drift apart the first time
+   somebody edits one. Here the system case needs no JavaScript at all, which
+   is also why there is no dark flash on load: nothing has to run first. */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces. Warm neutrals in both themes — the light side is off-white, not
+     white, so long reading sessions stay as comfortable as the dark one. */
+  --bg-app: light-dark(#faf9f5, #262624);
+  --bg-sidebar: light-dark(#f0eee6, #1f1e1d);
+  --bg-surface: light-dark(#ffffff, #302f2c);
+  --bg-surface-hover: light-dark(#f4f2ec, #383632);
+  --bg-elevated: light-dark(#ffffff, #3a3835);
+  --bg-scrim: light-dark(rgb(60 56 50 / 34%), rgb(15 14 13 / 62%));
+  --bg-code: light-dark(#f7f5f0, #1c1b1a);
+
+  --border: light-dark(#e4e1d9, #3d3b37);
+  --border-strong: light-dark(#cdc9be, #4a4742);
+
+  --text: light-dark(#262624, #f0eee6);
+  --text-muted: light-dark(#57534b, #b4b0a5);
+  /* Faint, not illegible: this is the colour of hostnames, timestamps and
+     hints at 11px, and the softer pair measured 4.2-4.3:1 on surface — the
+     wrong side of AA for text that small. */
+  --text-faint: light-dark(#736e61, #9d988c);
+
+  /* The brand orange is the same ink in both themes — that is the point of a
+     brand colour. Only the hover moves: darker on white, lighter on dark. */
+  --accent: #c96442;
+  --accent-hover: light-dark(#b0553a, #d97757);
+  --accent-fg: #ffffff;
+  --accent-soft: light-dark(rgb(201 100 66 / 10%), rgb(201 100 66 / 14%));
+  --accent-ring: light-dark(rgb(201 100 66 / 40%), rgb(201 100 66 / 45%));
+
+  /* Status colours are darkened for light mode: the pastel versions that read
+     well on #262624 are barely visible on white. */
+  --danger: light-dark(#c0392b, #e06c6c);
+  --danger-soft: light-dark(rgb(192 57 43 / 10%), rgb(224 108 108 / 12%));
+  --success: light-dark(#3f8b52, #7fc98f);
+  --success-soft: light-dark(rgb(63 139 82 / 10%), rgb(127 201 143 / 12%));
+  --success-ring: light-dark(rgb(63 139 82 / 34%), rgb(127 201 143 / 32%));
+  --warning: light-dark(#9b6b12, #e0b568);
+  --warning-soft: light-dark(rgb(155 107 18 / 10%), rgb(224 181 104 / 12%));
+  /* "read from the web". Deliberately not accent, success or warning: a
+     search is neither a brand action, a success nor a problem, and it has to
+     stay distinguishable from the "po revizi" chip sitting next to it. */
+  /* The light blue is darker than the obvious #2b6cb0: every consumer of
+     --info is 10-11px text sitting on --info-soft, and the lighter shade
+     measured 4.4:1 against that tint — under AA for text this small. */
+  --info: light-dark(#2a63a4, #7ab3e0);
+  --info-soft: light-dark(rgb(42 99 164 / 10%), rgb(122 179 224 / 12%));
+
+  /* The refracted fan in the Prizma mark. Reused by the login aurora, so the
+     brand and the sign-in screen are literally lit by the same spectrum.
+     Deeper on light so the gradient headline stays readable on off-white. */
+  --spectrum-1: light-dark(#d9992b, #f2c879);
+  --spectrum-2: light-dark(#cf7433, #e59356);
+  --spectrum-3: light-dark(#c8483f, #d9635a);
+  --spectrum-4: light-dark(#8b4bb0, #a86fc4);
+  --spectrum-5: light-dark(#2f7fbd, #5d9fd6);
+
+  /* Syntax highlighting, mapped onto the palette rather than importing a
+     highlight.js theme — one theme file would only ever suit one mode. */
+  --syntax-keyword: light-dark(#a8382a, #d98d7a);
+  --syntax-string: light-dark(#3d7a2c, #a3c98f);
+  --syntax-number: light-dark(#96660f, #e0b568);
+  --syntax-title: light-dark(#28598f, #8fbce0);
+  --syntax-attr: light-dark(#7c4a94, #d7bde0);
+  --syntax-builtin: light-dark(#1f7a68, #7fc9b8);
+
+  /* Thin tints layered over a surface. Light mode darkens, dark mode lightens
+     — the same gesture, opposite direction. */
+  --code-head-tint: light-dark(rgb(15 14 13 / 3%), rgb(255 255 255 / 2%));
+  --sheen: light-dark(rgb(15 14 13 / 4%), rgb(255 255 255 / 6%));
+  /* Pulls the login aurora back from the text it sits behind. */
+  --aurora-veil: light-dark(rgb(255 255 255 / 26%), rgb(0 0 0 / 22%));
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* A 46%-black shadow is depth on a dark app and a smudge on a white one. */
+  --shadow-sm: 0 1px 2px light-dark(rgb(60 56 50 / 8%), rgb(0 0 0 / 24%));
+  --shadow-md: 0 4px 16px light-dark(rgb(60 56 50 / 10%), rgb(0 0 0 / 28%));
+  --shadow-lg: 0 18px 48px light-dark(rgb(60 56 50 / 16%), rgb(0 0 0 / 46%));
+
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 280ms;
+  --ease: cubic-bezier(0.2, 0.6, 0.2, 1);
+
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, Inter, Roboto,
+    "Helvetica Neue", sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono",
+    monospace;
+
+  --sidebar-w: 264px;
+  --content-max: 46rem;
+  --topbar-h: 52px;
+}
+
+/* The two forced modes. Setting `color-scheme` is the whole switch: every
+   `light-dark()` above resolves against it, and the browser's own chrome
+   (scrollbars, form controls, the canvas behind the page) follows too. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}

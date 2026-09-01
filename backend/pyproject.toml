@@ -1,0 +1,30 @@
+[project]
+name = "multiagent-backend"
+version = "0.1.0"
+description = "Local multiagent chat backend: BYOK router across free LLM provider APIs"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "litellm>=1.55",
+    "sqlmodel>=0.0.22",
+    # Postgres (Neon). `[binary]` ships the compiled libpq so the Docker image
+    # needs no build toolchain and no `libpq-dev`.
+    "psycopg[binary]>=3.2",
+    # AES-256-GCM for provider keys at rest. Replaces `keyring`, which has no
+    # working backend inside a Linux container — every read there either raises
+    # or quietly returns None, which would look exactly like "no key set".
+    "cryptography>=44.0",
+    "pydantic-settings>=2.6",
+    "sse-starlette>=2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "httpx>=0.27",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

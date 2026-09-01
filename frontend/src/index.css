@@ -1,0 +1,3088 @@
+@import "./styles/tokens.css";
+
+/* ---------------------------------------------------------------- base --- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* ---------------------------------------------------------- scrollbars --- */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  transition: background-color var(--dur) var(--ease);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ------------------------------------------------------------- shell ----- */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  height: 100dvh;
+  overflow: hidden;
+  transition: grid-template-columns var(--dur) var(--ease);
+}
+
+.app[data-sidebar="closed"] {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: var(--bg-scrim);
+  backdrop-filter: blur(2px);
+  animation: fade-in var(--dur) var(--ease);
+}
+
+/* ----------------------------------------------------------- sidebar ----- */
+
+.sidebar {
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.sidebar-inner {
+  width: var(--sidebar-w);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  gap: 8px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 6px 2px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.brand svg {
+  flex-shrink: 0;
+}
+
+.new-chat-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.new-chat-btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+}
+
+.search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* Direct child only: the clear button's own icon sits on the right and has to
+   stay clickable, which `pointer-events: none` on every svg would break. */
+.search-field > svg {
+  position: absolute;
+  left: 10px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.search-field .icon-btn {
+  position: absolute;
+  right: 4px;
+}
+
+.search-field input {
+  width: 100%;
+  padding: 7px 10px 7px 32px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+
+.search-field input::placeholder {
+  color: var(--text-faint);
+}
+
+.search-field input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+  background: var(--bg-surface);
+}
+
+.conversation-list {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.list-group-label {
+  padding: 12px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.conversation-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 6px 7px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.conversation-item:hover {
+  background: var(--bg-surface);
+  color: var(--text);
+}
+
+.conversation-item.active {
+  background: var(--bg-surface-hover);
+  color: var(--text);
+}
+
+.conversation-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-item .row-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.conversation-item:hover .row-actions,
+.conversation-item:focus-within .row-actions {
+  opacity: 1;
+}
+
+.pin-indicator {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+/* A body hit needs two lines, unlike every other row in this list. */
+.conversation-item.search-hit {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.search-snippet {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  background: var(--bg-app);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+}
+
+.rename-input:focus {
+  outline: none;
+}
+
+.confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 6px 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.confirm-row span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.key-status-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: left;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.key-status-btn:hover {
+  background: var(--bg-surface);
+  color: var(--text);
+}
+
+.key-status-btn .count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.key-status-btn.empty .count {
+  color: var(--warning);
+}
+
+/* Light / dark / system. A track plus three segments, so the choice reads as
+   one control with a selected state rather than three unrelated buttons. */
+.theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px 6px 12px;
+}
+
+.theme-row-label {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-app);
+}
+
+.theme-seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.theme-seg:hover {
+  color: var(--text);
+}
+
+.theme-seg[data-checked="true"] {
+  background: var(--bg-surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 10px;
+}
+
+.account-id {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-id svg {
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------- topbar ---- */
+
+.chat-area {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-app);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--topbar-h);
+  flex-shrink: 0;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------ buttons ---- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-surface-hover);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-outline {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--bg-surface);
+  color: var(--text);
+}
+
+.btn-danger {
+  background: transparent;
+  border-color: transparent;
+  color: var(--danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-faint);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--bg-surface-hover);
+  color: var(--text);
+}
+
+.icon-btn.danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.chip.ok {
+  background: var(--success-soft);
+  border-color: transparent;
+  color: var(--success);
+}
+
+.chip.warn {
+  background: var(--warning-soft);
+  border-color: transparent;
+  color: var(--warning);
+}
+
+/* ------------------------------------------------------------- alert ----- */
+
+/* Anchored above the composer, one line high, dismissible. The old block sat
+   on top of the thread and pushed every message down on each render; this sits
+   in the gap that already exists between the last answer and the input. */
+.alert-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, calc(var(--content-max) + 40px));
+  margin: 0 auto -4px;
+  padding: 9px 10px 9px 13px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  font-size: 13px;
+  color: var(--text);
+  animation: fade-in-up var(--dur) var(--ease);
+}
+
+.alert-strip > svg {
+  flex-shrink: 0;
+  color: var(--warning);
+}
+
+.alert-strip p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.alert-strip .btn {
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  /* The sentence is the part that has to give: the two buttons are the only
+     things here that do anything. */
+  .alert-strip {
+    flex-wrap: wrap;
+  }
+
+  .alert-strip p {
+    flex-basis: 100%;
+    order: 3;
+  }
+}
+
+/* ---------------------------------------------------------- messages ----- */
+
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  position: relative;
+}
+
+.messages-inner {
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding: 28px clamp(16px, 4vw, 32px) 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.message {
+  animation: fade-in-up var(--dur-slow) var(--ease);
+}
+
+.message.user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.message.user .bubble {
+  max-width: 85%;
+  padding: 10px 15px;
+  border-radius: var(--radius-xl);
+  border-bottom-right-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.model-badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* Who answered, as a name rather than a slug. `groq/groq/compound-mini` in
+   monospace read like a stack trace; the slug is still there, in the title. */
+.model-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.model-name.pending {
+  color: var(--text-faint);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+/* A monogram in the provider's own hashed colour. Not a vendor logo: drawing
+   eighteen of those from memory would mean inventing marks that don't exist. */
+.provider-mark {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  /* The tile carries the tint and the letter is knocked out of it in the
+     surface colour. The fallback matters: without it a mark whose tint failed
+     to arrive would be a letter on nothing. */
+  background: var(--mark-tint, var(--text-faint));
+  color: var(--bg-surface);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+/* What the front model decided, next to which model answered. Sans-serif on
+   purpose — it is prose about the routing, not a model identifier. */
+.plan-chip {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.plan-chip.revised {
+  border-color: transparent;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.plan-chip.reviewing {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+/* Inline-flex only on this one: it is the only chip carrying an icon. */
+.plan-chip.search {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-color: transparent;
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+/* The pinned provider couldn't answer and someone else did. Its own line, in
+   the warning colour: it is the one thing here the user might want to act on. */
+.meta-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 8px;
+  font-size: 11.5px;
+  color: var(--warning);
+}
+
+.meta-note svg {
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------- steps rail --- */
+
+/* A deep run takes up to two minutes. Before this it showed one line of text
+   for the whole of it, which reads as "stuck" rather than "working". */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 2px 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  animation: fade-in-up var(--dur) var(--ease) both;
+}
+
+.step-mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--text-faint);
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+
+.step[data-state="done"] {
+  color: var(--text-muted);
+}
+
+.step[data-state="done"] .step-mark {
+  border-color: transparent;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.step[data-state="active"] {
+  color: var(--text);
+}
+
+.step[data-state="active"] .step-mark {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+/* Only the running step breathes. Three pulsing rows at once would read as
+   three things happening, and exactly one of them is. */
+.step[data-state="active"] .step-label {
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.step[data-state="todo"] {
+  opacity: 0.6;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ------------------------------------------------------------ sources --- */
+
+/* Two shapes, one wrapper: a card strip when there are four or fewer sources,
+   a native <details> past that. The strip has no chrome of its own — the
+   cards are the chrome — so the box below is scoped to the collapsed form. */
+.sources {
+  margin: 4px 0;
+  font-size: 12.5px;
+}
+
+.sources details {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.sources summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  border-radius: var(--radius-md);
+  transition: color var(--dur) var(--ease);
+}
+
+/* Safari draws its own triangle otherwise, next to ours. */
+.sources summary::-webkit-details-marker {
+  display: none;
+}
+
+.sources summary:hover {
+  color: var(--text);
+}
+
+.sources-caret {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: transform var(--dur) var(--ease);
+}
+
+.sources details[open] .sources-caret {
+  transform: rotate(90deg);
+}
+
+.sources-count {
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--info-soft);
+  color: var(--info);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Up to four sources show as cards with no click required — the receipts are
+   the point, and hiding them behind a disclosure made the common case worse. */
+.sources-head {
+  margin: 14px 0 7px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.sources-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.sources-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.source-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  text-decoration: none;
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+
+.source-card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-hover);
+  transform: translateY(-1px);
+}
+
+/* The number *is* the [n] in the answer above — never reorder these. */
+.source-index {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  background: var(--info-soft);
+  color: var(--info);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Whatever the search API handed back. Nothing is fetched from a favicon CDN:
+   that would tell a third party every domain the answers were built from. */
+.source-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.source-icon.mono {
+  display: grid;
+  place-items: center;
+  background: var(--bg-app);
+  color: var(--text-faint);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.source-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.source-title {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-card:hover .source-title {
+  color: var(--accent-hover);
+}
+
+.source-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* Re-added by the click handler on every citation click, so a second click on
+   the same [n] is still visibly answered. */
+.source-card.flash {
+  animation: flash-source 1.1s var(--ease);
+}
+
+@keyframes flash-source {
+  0%,
+  40% {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  100% {
+    border-color: var(--border);
+    background: var(--bg-surface);
+  }
+}
+
+.model-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.1s infinite ease-in-out;
+}
+
+/* Wraps one message plus anything that belongs above it — today the compact
+   divider. The message itself keeps its own spacing rules. */
+.message-slot {
+  display: contents;
+}
+
+/* The seam where the summarised prefix ends. Deliberately quiet: nothing was
+   lost, so it must not read as a warning. */
+.compact-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 2px;
+  cursor: default;
+}
+
+.compact-divider::before,
+.compact-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.compact-divider-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.compact-divider-count {
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-hover);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.message-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--danger);
+  background: var(--danger-soft);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.message-error svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--danger);
+}
+
+.message-error-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Full-width row under the text, indented past the icon, so the button has
+   somewhere to sit instead of floating next to the last line. */
+.message-error-actions {
+  flex-basis: 100%;
+  padding-left: 26px;
+}
+
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.message:hover .message-actions,
+.message:focus-within .message-actions {
+  opacity: 1;
+}
+
+/* The pencil belongs on the same side as the bubble it edits. */
+.message.user .user-actions {
+  justify-content: flex-end;
+}
+
+/* Editing a user message. The textarea keeps the bubble's own geometry so the
+   text does not jump when the editor opens. */
+.bubble.edit {
+  width: min(100%, 42rem);
+  padding: 10px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--accent-ring);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.bubble.edit textarea {
+  display: block;
+  width: 100%;
+  max-height: 40vh;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.55;
+  resize: none;
+  outline: none;
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* Said up front, because there is no undo: everything below this turn goes. */
+.edit-hint {
+  margin: 6px 2px 0;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  text-align: right;
+}
+
+/* What an answer cost. Both halves are optional — wall clock is always
+   measurable, token usage only when the provider reports it. */
+.cost {
+  margin-left: auto;
+  padding-right: 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+/* Sits after the cost when both are there, and takes the right edge when it
+   is alone. `margin-left: auto` on both would push them apart. */
+.message-time {
+  padding-right: 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+  cursor: default;
+}
+
+.cost + .message-time {
+  margin-left: 0;
+  padding-left: 8px;
+}
+
+.message-time:first-of-type {
+  margin-left: auto;
+}
+
+/* The caret rides the last block of the answer instead of sitting on its own
+   line below it, so the text does not appear to have already finished. */
+.message.assistant[data-streaming] .prose > *:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: blink 1s steps(2, start) infinite;
+}
+
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  animation: fade-in-up var(--dur) var(--ease);
+}
+
+.scroll-bottom-btn:hover {
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------- prose ----- */
+
+.prose {
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+/* [2] in the answer, turned into a link to source 2 by the rehype pass. Small
+   and superscript so a cited paragraph still reads as a paragraph. */
+/* `.prose a` lands later in this file with the same specificity, so the pill
+   has to out-rank it or it renders as an ordinary underlined link. */
+.prose a.citation {
+  display: inline-block;
+  min-width: 15px;
+  margin: 0 1px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--info-soft);
+  color: var(--info);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  text-align: center;
+  text-decoration: none;
+  vertical-align: super;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.prose a.citation:hover {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+/* Blocks arrive one at a time as the markdown parses, so fading the whole
+   answer on every token would restart the animation constantly. Scoped to the
+   streaming message: a reloaded conversation should just be there. */
+.message.assistant[data-streaming] .prose > * {
+  animation: fade-in var(--dur) var(--ease) both;
+}
+
+.prose > *:first-child {
+  margin-top: 0;
+}
+
+.prose > *:last-child {
+  margin-bottom: 0;
+}
+
+.prose p {
+  margin: 0 0 14px;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  margin: 24px 0 10px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.prose h1 {
+  font-size: 1.4em;
+}
+.prose h2 {
+  font-size: 1.22em;
+}
+.prose h3 {
+  font-size: 1.08em;
+}
+.prose h4 {
+  font-size: 1em;
+  color: var(--text-muted);
+}
+
+.prose ul,
+.prose ol {
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+
+.prose li {
+  margin-bottom: 5px;
+}
+
+.prose li::marker {
+  color: var(--text-faint);
+}
+
+.prose a {
+  color: var(--accent-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose blockquote {
+  margin: 0 0 14px;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-muted);
+}
+
+.prose hr {
+  margin: 22px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.prose :not(pre) > code {
+  padding: 1.5px 5px;
+  border-radius: 5px;
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+}
+
+/* The gradient is painted by the background itself: two opaque stops pinned to
+   the scroll container's edges, two shadow stops that only show once there is
+   content scrolled past them. No JavaScript, no scroll listener. */
+.table-wrap,
+.code-block pre {
+  --scroll-face: var(--bg-surface);
+  background-image: linear-gradient(to right, var(--scroll-face), transparent 12px),
+    linear-gradient(to left, var(--scroll-face), transparent 12px),
+    linear-gradient(to right, var(--sheen), transparent 14px),
+    linear-gradient(to left, var(--sheen), transparent 14px);
+  background-repeat: no-repeat;
+  background-size: 24px 100%, 24px 100%, 14px 100%, 14px 100%;
+  background-position: 0 0, 100% 0, 0 0, 100% 0;
+  /* `local` follows the content, `scroll` stays pinned — which is what makes
+     the shade appear only on the side that still has content off-screen. */
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* Code sits on its own surface, so the opaque half of the gradient has to
+   match it or the fade shows as a pale bar over dark code. */
+.code-block pre {
+  --scroll-face: var(--bg-code);
+}
+
+.table-wrap {
+  overflow-x: auto;
+  margin: 0 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* The wrapper scrolls, so the table is free to be as wide as its content
+   needs. Pinned at `width: 100%` it instead inherited `overflow-wrap: anywhere`
+   from .prose and broke "Claude Opus 5" into a stack of single letters — a
+   compressed column rather than the scroll the edge shadow promises. */
+.prose table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.prose th,
+.prose td {
+  /* Wide enough for a sentence, narrow enough that one verbose cell cannot
+     push the rest of the table off-screen. */
+  max-width: 320px;
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: normal;
+}
+
+.prose th {
+  background: var(--bg-surface);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.prose tr:last-child td {
+  border-bottom: none;
+}
+
+/* --------------------------------------------------------- code block --- */
+
+.code-block {
+  margin: 0 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-code);
+  overflow: hidden;
+}
+
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px 5px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--code-head-tint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 13px 14px;
+  overflow-x: auto;
+}
+
+.code-block code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-faint);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.copy-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text);
+}
+
+.copy-btn.copied {
+  color: var(--success);
+}
+
+/* Syntax colours, mapped onto the app palette rather than importing a theme. */
+.hljs-comment,
+.hljs-quote {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-type {
+  color: var(--syntax-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition {
+  color: var(--syntax-string);
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet {
+  color: var(--syntax-number);
+}
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--syntax-title);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable {
+  color: var(--syntax-attr);
+}
+.hljs-built_in,
+.hljs-class .hljs-title {
+  color: var(--syntax-builtin);
+}
+.hljs-meta,
+.hljs-deletion {
+  color: var(--text-muted);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------- empty state --- */
+
+.empty-state {
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding: clamp(40px, 12vh, 110px) clamp(16px, 4vw, 32px) 20px;
+  text-align: center;
+  animation: fade-in-up var(--dur-slow) var(--ease);
+}
+
+.empty-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin: 0 auto 18px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.empty-state h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.empty-state p {
+  margin: 0 0 26px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+.suggestion:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.suggestion-icon {
+  flex-shrink: 0;
+  color: var(--accent-hover);
+}
+
+.suggestion-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The mode the chip will actually switch to — so "deep research" on a chip is
+   a promise the click keeps, not a description of the prompt. */
+.suggestion-tag {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .suggestion {
+    width: 100%;
+  }
+}
+
+/* ---------------------------------------------------------- composer ---- */
+
+.composer-wrap {
+  flex-shrink: 0;
+  padding: 0 clamp(16px, 4vw, 32px) 16px;
+  background: linear-gradient(to bottom, transparent, var(--bg-app) 22px);
+}
+
+.composer-inner {
+  max-width: var(--content-max);
+  margin-inline: auto;
+}
+
+/* A column, not a row: the textarea sits on top and the routing controls plus
+   the send button share the strip below it. Keeping the pickers inside the
+   same bordered box makes them read as part of composing the message rather
+   than as app chrome that happens to live nearby. */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.composer textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 26px;
+  max-height: 200px;
+  padding: 4px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  overflow-y: auto;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.composer-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-pickers {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  /* Takes the slack so the send button stays hard right. */
+  flex: 1;
+}
+
+.composer textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.send-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease), opacity var(--dur) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.send-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.send-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.send-btn:disabled {
+  background: var(--bg-elevated);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.send-btn.stop {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.send-btn.stop:hover {
+  background: var(--border-strong);
+}
+
+/* Said once, under the row, rather than repeated inside three picker rows. */
+.composer-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 8px auto 0;
+  max-width: 62ch;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  background: var(--info-soft);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.composer-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--info);
+}
+
+.composer-hint {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------ pickers --- */
+
+.picker {
+  position: relative;
+  min-width: 0;
+}
+
+.picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.picker-trigger:hover:not(:disabled),
+.picker-trigger[aria-expanded="true"] {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.picker-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.picker-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.picker-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-chevron {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.picker-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  width: max-content;
+  min-width: 220px;
+  max-width: min(340px, calc(100vw - 32px));
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  animation: picker-in var(--dur-fast) var(--ease);
+}
+
+@keyframes picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.picker-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker-option[data-active="true"]:not([data-disabled="true"]) {
+  background: var(--bg-surface-hover);
+}
+
+.picker-option[data-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.picker-check {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.picker-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.picker-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.picker-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.picker-desc {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+/* Under ~560px three labels plus the send button stop fitting on one line. */
+@media (max-width: 560px) {
+  /* Icon-only would fit, but then nothing on screen says *which* model,
+     effort or web mode is active — the value lives only in the title
+     attribute, and a phone has no hover. So the chevron goes and the value
+     stays, truncated. */
+  .picker-chevron {
+    display: none;
+  }
+
+  /* Two per line, the third wrapping underneath. Squeezing three triggers
+     onto one phone-width strip leaves each showing four ellipsized
+     characters, which says nothing at all. */
+  .composer-pickers {
+    flex-wrap: wrap;
+  }
+
+  .composer-controls {
+    /* The picker block is now two rows tall; the send button belongs beside
+       the last of them, not floating in the middle. */
+    align-items: flex-end;
+  }
+
+  .picker {
+    flex: 1 1 calc(50% - 3px);
+  }
+
+  .picker-trigger {
+    width: 100%;
+    padding: 0 8px;
+    border-color: var(--border);
+  }
+
+  .picker-menu {
+    min-width: 200px;
+  }
+}
+
+/* ---------------------------------------------------- command palette --- */
+
+/* Deliberately not centred: a palette that opens under the cursor's resting
+   height is faster to read than one that opens in the middle of the screen. */
+.palette-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: start center;
+  padding: clamp(60px, 14vh, 140px) 20px 20px;
+  background: var(--bg-scrim);
+  backdrop-filter: blur(3px);
+  animation: fade-in var(--dur) var(--ease);
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: min(60vh, 480px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: pop-in var(--dur) var(--ease);
+}
+
+.palette-input {
+  flex-shrink: 0;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+}
+
+.palette-input::placeholder {
+  color: var(--text-faint);
+}
+
+.palette-list {
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.palette-empty {
+  margin: 0;
+  padding: 22px 12px;
+  color: var(--text-faint);
+  font-size: 13px;
+  text-align: center;
+}
+
+.palette-group {
+  margin: 8px 0 4px;
+  padding: 0 10px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+}
+
+/* Keyboard and mouse share one highlight: the arrow keys move `data-active`
+   and so does hovering, so the two can never disagree about what Enter runs. */
+.palette-item[data-active="true"] {
+  background: var(--bg-surface-hover);
+  color: var(--text);
+}
+
+.palette-item[data-disabled="true"] {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.palette-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.palette-item[data-active="true"] .palette-icon {
+  color: var(--accent-hover);
+}
+
+.palette-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-check {
+  flex-shrink: 0;
+  color: var(--accent-hover);
+}
+
+.palette-hint {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* The topbar's way in for anyone who doesn't know the shortcut exists. */
+.chip.command-chip {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-faint);
+  transition: color var(--dur) var(--ease);
+}
+
+.chip.command-chip:hover {
+  color: var(--text);
+}
+
+.chip.command-chip kbd {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  /* No keyboard to press it with. */
+  .chip.command-chip {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------- settings in the modal - */
+
+.settings-section {
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-section h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.setting-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+/* A row whose control is a full-width field rather than a switch on the end. */
+.setting-row.column {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setting-row .setting-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+}
+
+.setting-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--text-faint);
+}
+
+.instructions-input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+  transition: border-color var(--dur) var(--ease);
+}
+
+.instructions-input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.instructions-input::placeholder {
+  color: var(--text-faint);
+}
+
+.instructions-count {
+  margin: 0;
+  align-self: flex-end;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.setting-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.setting-label {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.setting-help {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.setting-help a {
+  color: var(--accent-hover);
+}
+
+.setting-help code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--bg-code);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 38px;
+  height: 22px;
+  margin-top: 1px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--bg-app);
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.switch[aria-checked="true"] {
+  border-color: transparent;
+  background: var(--accent);
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur) var(--ease);
+}
+
+.switch[aria-checked="true"] .switch-thumb {
+  transform: translateX(16px);
+  background: var(--accent-fg);
+}
+
+/* ------------------------------------------------------------- modal ---- */
+
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--bg-scrim);
+  backdrop-filter: blur(3px);
+  animation: fade-in var(--dur) var(--ease);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 100%);
+  max-height: min(760px, 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-app);
+  box-shadow: var(--shadow-lg);
+  animation: pop-in var(--dur) var(--ease);
+  overflow: hidden;
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-head h2 {
+  margin: 0 0 3px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-head p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.provider-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  padding: 13px 14px;
+  transition: border-color var(--dur) var(--ease);
+}
+
+.provider-card.configured {
+  border-color: var(--success-ring);
+}
+
+.provider-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.provider-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.provider-head .spacer {
+  flex: 1;
+}
+
+.provider-meta {
+  margin: 7px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.provider-models {
+  margin: 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.provider-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.key-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.key-input {
+  position: relative;
+  flex: 1;
+  min-width: 190px;
+  display: flex;
+  align-items: center;
+}
+
+.key-input input {
+  width: 100%;
+  padding: 8px 34px 8px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  transition: border-color var(--dur) var(--ease);
+}
+
+.key-input input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.key-input .icon-btn {
+  position: absolute;
+  right: 3px;
+  width: 26px;
+  height: 26px;
+}
+
+/* Replaces the input once a key is stored: states the fact, offers no field
+   to retype something the app already has. */
+.key-stored {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 0;
+  color: var(--success);
+  font-size: 12.5px;
+}
+
+.key-stored svg {
+  flex-shrink: 0;
+}
+
+.provider-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+}
+
+.provider-result svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.provider-result.ok {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.provider-result.err {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.provider-result.warn {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+/* --------------------------------------------------------- shortcuts ---- */
+
+/* Narrower than the providers dialog: it is a two-column list, not a form. */
+.shortcuts-dialog {
+  max-width: 480px;
+}
+
+.shortcuts-dialog .settings-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.shortcut-grid {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 2px;
+}
+
+.shortcut-row dt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.shortcut-row dd {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+kbd.mono {
+  min-width: 22px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------- wordmark ----- */
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text);
+}
+
+.wordmark-text {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+/* --------------------------------------------------------- login ------- */
+
+.auth-stage {
+  position: relative;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: clamp(20px, 5vw, 48px);
+  overflow: hidden;
+  background: var(--bg-sidebar);
+}
+
+/* Three slowly drifting blobs in the logo's own spectrum. Heavy blur plus low
+   opacity keeps it as atmosphere rather than decoration competing with the
+   form. `will-change` pins them to their own layer so the drift doesn't
+   repaint the card on every frame. */
+.auth-aurora {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+}
+
+.auth-blob {
+  position: absolute;
+  width: 46vmax;
+  height: 46vmax;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.3;
+  will-change: transform;
+}
+
+.auth-blob-a {
+  top: 4%;
+  left: 6%;
+  background: radial-gradient(circle, var(--spectrum-2), transparent 68%);
+  animation: drift-a 26s var(--ease) infinite alternate;
+}
+
+.auth-blob-b {
+  bottom: 2%;
+  right: 4%;
+  background: radial-gradient(circle, var(--spectrum-4), transparent 68%);
+  opacity: 0.24;
+  animation: drift-b 32s var(--ease) infinite alternate;
+}
+
+.auth-blob-c {
+  top: 34%;
+  right: 26%;
+  background: radial-gradient(circle, var(--spectrum-5), transparent 70%);
+  opacity: 0.18;
+  animation: drift-c 38s var(--ease) infinite alternate;
+}
+
+/* Darkens the edges so the aurora never fights the text for contrast. */
+.auth-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 40%, transparent 20%, var(--bg-sidebar) 100%),
+    linear-gradient(0deg, var(--aurora-veil), var(--aurora-veil));
+}
+
+.auth-shell {
+  position: relative;
+  z-index: 1;
+  width: min(1080px, 100%);
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: clamp(32px, 6vw, 72px);
+  align-items: center;
+}
+
+/* ------------------------------------------------------------ auth hero -- */
+
+.auth-hero {
+  animation: fade-in-up var(--dur-slow) var(--ease) both;
+}
+
+.auth-hero-mark {
+  display: inline-flex;
+  padding: 14px;
+  margin-bottom: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(150deg, var(--sheen), transparent);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  animation: float 7s ease-in-out infinite;
+}
+
+.auth-hero-title {
+  margin: 0 0 16px;
+  font-size: clamp(30px, 4.2vw, 46px);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  font-weight: 640;
+}
+
+.auth-hero-accent {
+  background: linear-gradient(
+    100deg,
+    var(--spectrum-1),
+    var(--spectrum-3) 45%,
+    var(--spectrum-4) 75%,
+    var(--spectrum-5)
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.auth-hero-lede {
+  margin: 0 0 34px;
+  max-width: 44ch;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.auth-highlights {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 18px;
+}
+
+.auth-highlights li {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+}
+
+.auth-highlight-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--accent-hover);
+}
+
+.auth-highlights strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.auth-highlights p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-faint);
+  max-width: 42ch;
+  text-wrap: pretty;
+}
+
+/* ----------------------------------------------------------- auth card --- */
+
+.auth-panel {
+  display: grid;
+  justify-items: stretch;
+}
+
+.auth-card {
+  padding: clamp(24px, 3.4vw, 34px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  /* Semi-transparent over the aurora, so the card feels like glass sitting on
+     the light rather than a rectangle pasted over it. */
+  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: var(--shadow-lg);
+  animation: pop-in var(--dur-slow) var(--ease) both;
+}
+
+.auth-card-head {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-card-mark {
+  display: none;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.auth-card-head h2 {
+  margin: 0 0 7px;
+  font-size: 21px;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+
+.auth-card-head p {
+  margin: 0 auto;
+  max-width: 34ch;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.auth-oauth {
+  display: grid;
+  gap: 9px;
+}
+
+.auth-oauth-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.auth-oauth-btn:hover:not(:disabled) {
+  background: var(--bg-surface-hover);
+  border-color: var(--text-faint);
+  transform: translateY(-1px);
+}
+
+.auth-oauth-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.auth-oauth-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.auth-oauth-btn svg {
+  flex-shrink: 0;
+}
+
+.auth-oauth-tag {
+  margin-left: auto;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-field {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-label {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-muted);
+}
+
+.auth-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.auth-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.auth-input-wrap:has(input[aria-invalid="true"]) {
+  border-color: var(--danger);
+}
+
+.auth-input-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.auth-input-wrap input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 12px 11px 36px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.auth-input-wrap input::placeholder {
+  color: var(--text-faint);
+  letter-spacing: normal;
+}
+
+.auth-reveal {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-right: 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.auth-reveal:hover {
+  color: var(--text);
+  background: var(--bg-surface-hover);
+}
+
+.auth-hint {
+  margin: -2px 0 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.auth-hint-bad {
+  color: var(--danger);
+}
+
+.auth-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 12px;
+  border-left: 2px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.5;
+  animation: fade-in-up var(--dur) var(--ease) both;
+}
+
+.auth-error svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--danger);
+}
+
+.auth-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 12px 16px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--accent-hover), var(--accent));
+  color: var(--accent-fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: filter var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.auth-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.auth-submit:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.auth-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.auth-foot {
+  margin: 18px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-faint);
+  text-align: center;
+  text-wrap: pretty;
+}
+
+/* Full-screen spinner shown while the auth state is still being fetched, so
+   the login form never flashes before we know whether it's needed. */
+.auth-boot {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  gap: 14px;
+  color: var(--text-faint);
+  background: var(--bg-sidebar);
+}
+
+/* -------------------------------------------------------- animations ---- */
+
+@keyframes float {
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+@keyframes drift-a {
+  to {
+    transform: translate3d(8vw, 6vh, 0) scale(1.12);
+  }
+}
+
+@keyframes drift-b {
+  to {
+    transform: translate3d(-7vw, -5vh, 0) scale(1.08);
+  }
+}
+
+@keyframes drift-c {
+  to {
+    transform: translate3d(-5vw, 8vh, 0) scale(0.92);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* -------------------------------------------------------- responsive ---- */
+
+@media (max-width: 900px) {
+  .app,
+  .app[data-sidebar="closed"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 40;
+    width: var(--sidebar-w);
+    border-right: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-lg);
+    /* Explicit token offset, not -100%: the value stays correct even if the
+       element's own width is still being resolved during a viewport change. */
+    transform: translateX(calc(-1 * var(--sidebar-w)));
+    /* visibility flips only after the slide-out finishes, and takes the closed
+       drawer out of the tab order — otherwise Tab walks into an off-screen
+       panel, and a stalled transform would leave it clickable. */
+    visibility: hidden;
+    transition: transform var(--dur) var(--ease), visibility 0s linear var(--dur);
+  }
+
+  .app[data-sidebar="open"] .sidebar {
+    transform: none;
+    visibility: visible;
+    transition: transform var(--dur) var(--ease), visibility 0s;
+  }
+
+  .app[data-sidebar="open"] .scrim {
+    display: block;
+  }
+
+  /* The hero is the marketing half; on a narrow screen the form is the whole
+     job, so the hero goes and the card grows its own brand mark instead. */
+  .auth-shell {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 440px;
+  }
+
+  .auth-hero {
+    display: none;
+  }
+
+  .auth-card-mark {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 560px) {
+  :root {
+    --content-max: 100%;
+    --topbar-h: 48px;
+  }
+
+  body {
+    font-size: 14.5px;
+  }
+
+  .messages-inner {
+    padding-top: 18px;
+    gap: 18px;
+  }
+
+  .message.user .bubble {
+    max-width: 92%;
+  }
+
+  .composer-hint {
+    display: none;
+  }
+
+  .modal-scrim {
+    padding: 0;
+  }
+
+  .modal {
+    width: 100%;
+    max-height: 100dvh;
+    height: 100dvh;
+    border: none;
+    border-radius: 0;
+  }
+
+  .key-row {
+    flex-direction: column;
+  }
+
+  .key-row .btn {
+    width: 100%;
+  }
+
+  .auth-stage {
+    padding: 16px;
+    place-items: stretch;
+  }
+
+  .auth-card {
+    border: none;
+    background: transparent;
+    backdrop-filter: none;
+    box-shadow: none;
+    padding: 8px 4px;
+    align-self: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
