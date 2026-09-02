@@ -1,5 +1,6 @@
 import { ArrowUp, Cpu, Gauge, Globe, Square } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -85,12 +86,32 @@ export function Composer({
   }, [draftKey, value]);
 
   // Auto-grow: reset to auto first so the box can also shrink again.
-  useEffect(() => {
+  //
+  // The width guard is not paranoia. A textarea laid out at zero width reports
+  // a scrollHeight of hundreds of pixels even when it is empty, so measuring
+  // then pins the box open at MAX_HEIGHT_PX — and because the measurement is
+  // keyed on the text, nothing ever corrects it. Zero width is not exotic: it
+  // is a background tab, a restored session, and a PWA launched from the home
+  // screen while the window is still being sized.
+  const fit = useCallback(() => {
     const el = textareaRef.current;
-    if (!el) return;
+    if (!el || el.clientWidth === 0) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`;
-  }, [value]);
+  }, []);
+
+  useEffect(fit, [fit, value]);
+
+  // Re-measure whenever the box changes width: rotating a phone, opening the
+  // sidebar, or the first paint after mounting hidden. `ResizeObserver` covers
+  // all three, where a window resize listener misses the last one.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fit]);
 
   useImperativeHandle(handleRef, () => ({
     prefill(text: string) {

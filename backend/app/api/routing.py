@@ -11,8 +11,7 @@ reports what the user *can* pick, never anything about the keys themselves.
 
 from fastapi import APIRouter
 
-from app.providers import keystore
-from app.providers.registry import REGISTRY
+from app.providers.registry import active
 from app.routing import effort as effort_tiers
 from app.routing import research as researching
 from app.routing import selector
@@ -71,12 +70,15 @@ def routing_options():
                 "id": p.id,
                 "label": p.display_name,
                 "description": p.notes,
-                "configured": keystore.has_key(p.credential_id),
+                # `selector.usable` rather than a key lookup: an endpoint on
+                # this machine has no key to store, and reporting it as
+                # unconfigured would grey out the entry the user just wired up.
+                "configured": selector.usable(p),
                 "recommended": False,
             }
             # Search-only entries are driven by the globe control, not pinned
             # as an answering model — see `ProviderModel.selectable`.
-            for p in REGISTRY
+            for p in active()
             if p.selectable
         ],
     ]

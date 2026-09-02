@@ -19,7 +19,9 @@ import {
   saveSettings,
   testProviderKey,
 } from "../lib/api";
-import type { Provider } from "../lib/types";
+import type { AuthState, Provider } from "../lib/types";
+import { AccountSection } from "./AccountSection";
+import { LocalModelSection } from "./LocalModelSection";
 
 const CAPABILITY_LABELS: Record<string, string> = {
   fast: "rychlé",
@@ -94,6 +96,10 @@ interface Props {
   onCustomInstructionsChange: (value: string) => void;
   onClose: () => void;
   onChanged: () => Promise<void> | void;
+  /** Null while the auth state is still loading; the account section waits. */
+  auth: AuthState | null;
+  /** Re-fetches `/api/auth/state` after a link, unlink or code change. */
+  onAuthChanged: () => void;
 }
 
 export function ProvidersModal({
@@ -105,6 +111,8 @@ export function ProvidersModal({
   onCustomInstructionsChange,
   onClose,
   onChanged,
+  auth,
+  onAuthChanged,
 }: Props) {
   const groups = useMemo(() => groupByKey(providers), [providers]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -236,10 +244,10 @@ export function ProvidersModal({
       >
         <div className="modal-head">
           <div style={{ flex: 1 }}>
-            <h2 id="providers-title">API klíče</h2>
+            <h2 id="providers-title">Nastavení</h2>
             <p>
-              Klíč se uloží do Windows Credential Manageru — ne do souboru ani databáze — a appka
-              ho nikdy neposílá zpátky do prohlížeče.
+              Klíče se šifrují AES-256 a hlavní klíč žije jen v prostředí serveru. Appka je nikdy
+              neposílá zpátky do prohlížeče — ani sobě, ani tobě.
             </p>
           </div>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Zavřít">
@@ -248,6 +256,8 @@ export function ProvidersModal({
         </div>
 
         <div className="modal-body">
+          {auth && <AccountSection auth={auth} onChanged={onAuthChanged} />}
+
           <section className="settings-section">
             <h3>Web a rešerše</h3>
 
@@ -341,6 +351,8 @@ export function ProvidersModal({
               </div>
             )}
           </section>
+
+          <LocalModelSection onChanged={onChanged} />
 
           {groups.map((group) => {
             const draft = drafts[group.keyId] ?? "";

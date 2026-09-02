@@ -18,7 +18,12 @@ ordering is a preference, and the fallback chain behind it stays intact.
 import time
 
 from app.providers import keystore
-from app.providers.registry import BY_ID, REGISTRY, ProviderModel, providers_for_capability
+from app.providers.registry import (
+    ProviderModel,
+    active,
+    by_id,
+    providers_for_capability,
+)
 
 COOLDOWN_SECONDS = 60.0
 
@@ -40,6 +45,19 @@ def _in_cooldown(provider_id: str) -> bool:
     return until is not None and until > time.monotonic()
 
 
+def usable(provider: ProviderModel) -> bool:
+    """Whether this one provider can be called right now.
+
+    Public because the answer has to be the same everywhere it is asked. It was
+    not: `candidates()` decided whether to honour a pin with a bare
+    `keystore.has_key`, so pinning the local endpoint — which is keyless by
+    definition, there being no key to store for a server on localhost — was
+    silently ignored and the answer came from the fallback chain with a "not
+    available" note. The user had connected it, tested it, and picked it.
+    """
+    return provider.keyless or keystore.has_key(provider.credential_id)
+
+
 def _configured(providers: list[ProviderModel]) -> list[ProviderModel]:
     """Providers the app can actually call right now.
 
@@ -49,7 +67,7 @@ def _configured(providers: list[ProviderModel]) -> list[ProviderModel]:
     free instead of each growing its own special case. `configured_slots()`
     below deliberately does *not* use this function.
     """
-    return [p for p in providers if p.keyless or keystore.has_key(p.credential_id)]
+    return [p for p in providers if usable(p)]
 
 
 def configured_slots() -> set[str]:
@@ -67,7 +85,7 @@ def configured_slots() -> set[str]:
     """
     return {
         p.credential_id
-        for p in REGISTRY
+        for p in active()
         if _can_answer(p) and keystore.has_key(p.credential_id)
     }
 
@@ -114,7 +132,7 @@ def candidates(
     others = _by_complexity(
         [
             p
-            for p in _configured(REGISTRY)
+            for p in _configured(active())
             if p.id not in preferred_ids and _can_answer(p)
         ],
         complexity,
@@ -128,10 +146,10 @@ def candidates(
     ]
 
     if pinned:
-        chosen = BY_ID.get(pinned)
+        chosen = by_id(pinned)
         # An unconfigured pin can't be honoured at all — leave the chain alone
         # and let the substitution note explain what happened.
-        if chosen is not None and keystore.has_key(chosen.credential_id):
+        if chosen is not None and usable(chosen):
             ordered = [chosen, *[p for p in ordered if p.id != chosen.id]]
 
     return ordered
@@ -150,7 +168,7 @@ def planner_candidates() -> list[ProviderModel]:
     the kind of thing that looks fine until something reads `[0]` directly.
     """
     ready = [
-        p for p in _configured(REGISTRY) if _can_answer(p) and not _in_cooldown(p.id)
+        p for p in _configured(active()) if _can_answer(p) and not _in_cooldown(p.id)
     ]
     return sorted(ready, key=lambda p: p.planner_rank)
 

@@ -25,6 +25,11 @@ function csp(isDev: boolean): string {
     "img-src 'self' data:",
     "font-src 'self' data:",
     `connect-src 'self'${isDev ? " ws://localhost:5173 ws://127.0.0.1:5173" : ""}`,
+    // The service worker and the manifest are same-origin files, but
+    // `default-src` does not cover either directive — without these two the
+    // worker never registers and the install prompt never appears.
+    "worker-src 'self'",
+    "manifest-src 'self'",
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",

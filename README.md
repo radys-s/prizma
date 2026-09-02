@@ -11,16 +11,19 @@ jeden vstup zleva, hranol, pět barevných výstupů vpravo.
 
 ## Architektura
 
+Lokálně dvě služby, na serveru jedna: FastAPI tam servíruje i postavenou SPA,
+takže je jeden origin a žádný CORS.
+
 ```
-frontend (React + Vite, :5173)  →  backend (FastAPI, :8000)
+lokálně:  frontend (React + Vite, :5173)  →  backend (FastAPI, :8000)
+na Renderu:            jeden proces — FastAPI servíruje /api i frontend/dist
                                          │
-                                    1) plánovač   →  LiteLLM  →  provider API
+                                    1) plánovač    →  LiteLLM  →  provider API
                                     2) vykonavatel →  LiteLLM  →  provider API
                                     3) revize (jen Max)
                                          │
-                                    SQLite (historie konverzací, účet, session)
-                                         │
-                              Windows Credential Manager (API klíče, přes `keyring`)
+                          SQLite lokálně / Neon Postgres na serveru
+                          (konverzace, účet, identity, session, API klíče)
 ```
 
 - **Plánovač** (`backend/app/routing/plan.py`): první model si zprávu přečte a
@@ -41,8 +44,10 @@ frontend (React + Vite, :5173)  →  backend (FastAPI, :8000)
   jde tiše na další v pořadí. Tohle byla příčina původního
   `litellm.NotFoundError` — natvrdo zadrátovaný slug, který u providera přestal
   existovat.
-- **Klíče se ukládají jen do OS credential store, nikdy do souboru ani do DB.**
-  Detaily a threat model níže v [Bezpečnost](#bezpečnost).
+- **API klíče leží v DB zašifrované AES-256-GCM**; hlavní klíč je jen v
+  prostředí serveru a `PRIZMA_KEY_<ID>` v prostředí přebíjí řádek v DB. Proč se
+  to změnilo oproti OS credential store a co to znamená, je v
+  [Bezpečnost](#bezpečnost).
 
 ## Dvoufázové routování
 
@@ -134,70 +139,174 @@ spuštění (prázdná DB) tě obrazovka nechá si ho zvolit.
 > Originu `http://localhost:5173`, takže tichá změna portu by zablokovala
 > ukládání klíčů s 403 a vypadalo by to jako chyba appky.
 
+### Jedním kliknutím: `aplikace.exe`
+
+V kořeni projektu leží `aplikace.exe`. Po rozkliknutí nastartuje backend, počká,
+až naběhne, a otevře prohlížeč na běžící appce. Vite se přitom nespouští —
+`backend/app/spa.py` servíruje `frontend/dist` ze stejného procesu, takže API
+i frontend jedou na jednom portu a není co udržovat naživu dvakrát.
+
+Co musí být hotové (jednorázově):
+
+- `backend\.venv` s nainstalovanými závislostmi — bez něj .exe vypíše přesně ty
+  tři příkazy, které chybí, a skončí;
+- `frontend\dist` — když chybí, .exe zkusí `npm install` a `npm run build` sám.
+
+**Okno nechej otevřené: zavřením se server vypne.** Není to úklid v handleru,
+protože ten se při zavření křížkem nespustí — uvicorn běží v **job objectu**
+s `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, takže ho ukončí kernel, ať okno skončí
+jakkoli. Osiřelý server držící starý build je horší chyba než pád: všechno
+vypadá v pořádku.
+
+Druhé rozkliknutí nespustí druhý server. První instance si port zapsala do
+`%LOCALAPPDATA%\Prizma\instance.port`, druhá ho ověří a jen otevře prohlížeč.
+
+**Rebuild** po zásahu do `tools/launcher/Launcher.cs`:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\launcher\build.ps1
+```
+
+Kompiluje se `csc.exe`, který je součástí Windows, takže build nic nestahuje
+a výsledek je jeden ~11 kB soubor bez runtime. PyInstaller tady použít nešlo —
+pip na tomhle stroji padá na `RecursionError` v setuptools, a build, který jde
+udělat jenom jednou, není build. Cenou je **C# 5**: žádná interpolace řetězců,
+žádné expression-bodied členy, všude `string.Format`.
+
+> Připravenost serveru se **nezjišťuje HTTP dotazem** na `/api/health`, ale TCP
+> connectem. Norton na tomhle stroji spojení otevře a odpověď nepodepsané .NET
+> binárce nedoručí — curl i prohlížeč přitom se stejným serverem mluví normálně.
+> Ani dvacetisekundový timeout nestačil. Ze stejného důvodu se neskenuje rozsah
+> portů: zavřený port Norton zahazuje místo odmítnutí, takže jedenáct sond
+> znamenalo dvacet sekund černého okna, než se server vůbec začal spouštět.
+
 ## Přihlášení
 
-Appka je single-user a zamčená **přístupovým kódem**. Při prvním spuštění si ho
-zvolíš, minimálně 4 znaky. Ukládá se jako `scrypt` hash (stdlib `hashlib`,
-žádná další závislost) — zapomenutý kód **nejde přečíst**, jde ho jen přepsat:
+Appka je pořád **single-user** — účet je jeden a nedá se z něj udělat víc. Co se
+změnilo: cest dovnitř k tomu jednomu účtu je teď několik a všechny končí u
+stejného `AppUser`. Každá je řádek v tabulce `AuthIdentity`.
+
+| cesta | co potřebuje | kdy dává smysl |
+|---|---|---|
+| **Přístupový kód** | 4+ znaky | rychlý vstup na telefonu |
+| **E-mail + heslo + kód z mailu** | 8+ znaků heslo, Resend klíč | hlavní cesta na serveru |
+| **E-mail + heslo + ověřovací aplikace** | to samé + TOTP | když nechceš čekat na mail |
+| **Google / GitHub** | zaregistrovaná OAuth appka | jeden klik, žádné heslo |
+
+Apple a Microsoft jsou naprogramované a v UI se ukážou, jakmile je nastavíš.
+U Apple to bez placeného developer účtu ($99/rok) a ověřené domény nejde —
+tlačítko zůstane jako „nenastaveno".
+
+### Dvoukrokové ověření
+
+`POST /api/auth/email/login` ověří heslo a **session nevydá**. Vrátí
+`{"stage": "2fa", "challenge_id": …}`. Cookies vydá až `/email/verify` nebo
+`/totp/verify`. To je celý smysl toho rozdělení: znalost hesla sama o sobě
+nikoho nepřihlásí.
+
+Challenge má `purpose`, a ten obě cesty svazuje dohromady:
+
+- `verify` a `login` — šestimístný kód, který odejde mailem. Platí 10 minut,
+  jedno použití, pět pokusů a je spálený. V DB je jen SHA-256 hash.
+- `totp` — kód se **nikdy neposílá a nikdy nekontroluje**. Řádek existuje jen
+  proto, aby byl krok s ověřovací aplikací navázaný na proběhlou kontrolu
+  hesla. Bez něj by `/totp/verify` byla cesta dovnitř, které stačí šest číslic
+  a žádné heslo.
+
+Každý endpoint cizí `purpose` odmítá — mailový kód neprojde TOTP routou a
+naopak, a `totp` challenge nejde nechat poslat znovu.
+
+### Ověřovací aplikace a záložní kódy
+
+V **Nastavení → Připojené účty** je TOTP (RFC 6238, ručně napsané v
+`app/auth/totp.py`, žádná závislost navíc). Ukáže se base32 klíč jako
+označitelný text a `otpauth://` odkaz — žádný QR kód, protože QR na tom samém
+telefonu, který by ho měl naskenovat, je k ničemu, a enkodér je závislost, jejíž
+jediná práce by bylo nakreslit řetězec.
+
+Potvrzení vrátí **8 záložních kódů, jednou a naposledy**. Každý funguje jednou.
+Vypnutí TOTP je smaže.
+
+### Zámek proti hádání
+
+Počítadlo neúspěchů je v databázi, ne v paměti procesu, a má **dva kýble**: jeden
+per IP a jeden globální. Ten globální je ten důležitý — bez něj by útočník
+rotující IP adresy resetoval limit každým requestem. Backoff je exponenciální:
+5 s → 30 s → 5 min → 30 min → 2 h.
+
+Čtyřznakový kód je na veřejné URL 10 000 možností. Co ho drží obhajitelný je
+právě ten globální kýbl a `PASSCODE_LOGIN_ENABLED=0`, kterým se ta cesta dá po
+připojení Googlu nebo e-mailu vypnout úplně. Hesla k e-mailu mají vlastní,
+vyšší práh (8 znaků).
+
+Zapomenutý kód nejde přečíst, jde ho jen přepsat — z UI, nebo:
 
 ```bash
 python scripts/set_passcode.py
 ```
 
-Přepsání kódu zároveň odhlásí všechny přihlášené session. Po pěti špatných
-pokusech se přihlášení na pět minut zamkne, a to i pro správný kód.
+### Kdo účet vlastní
 
-> **Ve fázi dev je to jen pohodlný zámek, ne credential.** Čtyřznakový kód dává
-> smysl, dokud appka poslouchá výhradně na loopbacku. Před deployem zvedni
-> `MIN_PASSCODE_LEN` v `backend/app/auth/core.py` zpátky na 8+ a zapni skutečné
-> přihlašovací formuláře.
+Na veřejné URL by jinak účet zabral první, kdo ji najde. Proto `OWNER_EMAIL`:
+když je nastavený, smí účet založit jen ta adresa. Pravidla jsou čtyři a platí
+pro všechny cesty stejně:
 
-### Google / Apple / Microsoft — hotové, ale vypnuté
+- účet neexistuje → první přihlášení ho založí, ale jen když `OWNER_EMAIL` sedí
+  (nebo není nastavený)
+- identita sedí → přihlásí
+- identita neznámá a **nikdo přihlášený** → 403 `jiny_ucet`
+- identita neznámá a **jsi přihlášený** → připojí se jako další cesta dovnitř
 
-Celý OIDC flow je napsaný a funkční (`backend/app/auth/oauth.py`, endpointy
-`/api/auth/oauth/*`, ikony v `frontend/src/components/BrandIcons.tsx`), ale
-**tlačítka se na přihlašovací obrazovce zatím nezobrazují.** Vrátí se spolu se
-skutečnými login formuláři při deployi — do té doby je jediná cesta dovnitř
-přístupový kód.
+Poslední zbývající identitu nejde odpojit — to by účet zamklo napořád.
 
-Až to budeš zapínat: v `LoginScreen.tsx` je na místě, kde blok býval, komentář,
-a stačí vrátit `.auth-oauth` blok s `startOAuth()`. Styly (`.auth-oauth-btn`,
-`.auth-divider`) v `index.css` zůstaly.
+### Nastavení OAuth
 
-První úspěšné přihlášení zakládá účet a příští přihlášení už musí být tou samou
-identitou — cizí Google účet dostane `?auth_error=jiny_ucet`.
-
-### Nastavení OAuth (až se bude zapínat)
-
-Do `backend/.env`:
+Do `backend/.env` (lokálně) nebo do proměnných prostředí na serveru:
 
 ```
-PUBLIC_BASE_URL=http://localhost:8000
+PUBLIC_BASE_URL=https://prizma.onrender.com
 GOOGLE_CLIENT_ID=...
-MICROSOFT_CLIENT_ID=...
-APPLE_CLIENT_ID=...
-APPLE_CLIENT_SECRET=...
+GOOGLE_CLIENT_SECRET=...
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
 ```
 
-Redirect URI, který u providera zaregistruješ, musí sedět znak po znaku:
-`http://localhost:8000/api/auth/oauth/{google|microsoft|apple}/callback`.
+Redirect URI musí sedět znak po znaku:
+`{PUBLIC_BASE_URL}/api/auth/oauth/{google|github|microsoft|apple}/callback`.
 
 | provider | kde | co potřebuješ |
 |---|---|---|
-| Google | Google Cloud Console → APIs & Services → Credentials → OAuth client ID (typ *Web application*) | jen client id, secret není potřeba (používá se PKCE) |
+| Google | Google Cloud Console → APIs & Services → Credentials → OAuth client ID (typ *Web application*) | client id; secret jen pokud nechceš PKCE |
+| GitHub | Settings → Developer settings → OAuth Apps → New OAuth App | client id **i** secret — OAuth Apps neumí PKCE |
 | Microsoft | Entra ID → App registrations → nová registrace, platforma *Web* | jen client id |
-| Apple | Apple Developer → Certificates, IDs & Profiles → Services ID | **placený developer účet**; `client_secret` je ES256 JWT, který si vygeneruješ ze soukromého klíče a vložíš do `.env` |
+| Apple | Apple Developer → Certificates, IDs & Profiles → Services ID | **placený účet + ověřená doména**; `client_secret` je ES256 JWT |
 
-Apple posílá odpověď jako `form_post`, takže callback má i POST variantu.
-Tělo se parsuje ručně přes `urllib.parse.parse_qs` — `Form(...)` z FastAPI by
-si vyžádalo `python-multipart` navíc a Apple posílá obyčejný
-`application/x-www-form-urlencoded`.
+GitHub není OIDC, ale obyčejné OAuth 2.0 — nevrací `id_token`. Identita se tahá
+z `GET /user` a e-mail z `GET /user/emails`, kde se bere jen ten **primary a
+zároveň verified**. Neúspěšná výměna kódu vrací HTTP 200 s `{"error": …}` v
+těle, takže se kontroluje tělo, ne status.
 
-Flow používá PKCE (S256) a jednorázový `state` s TTL 10 minut. `id_token` se
-tahá serverem přímo z token endpointu přes TLS, nikdy přes prohlížeč — což je
+OIDC flow používá PKCE (S256) a jednorázový `state` s TTL 10 minut. `id_token`
+se tahá serverem přímo z token endpointu přes TLS, nikdy přes prohlížeč — což je
 přesně případ, kdy OIDC Core §3.1.3.7 dovoluje ověřit TLS server místo podpisu
 JWT. Validuje se `iss`, `aud`, `exp` a `sub`. Kdyby token někdy začal chodit
 front-channelem, tahle úvaha přestává platit a ověření podpisu se stává povinným.
+
+Apple posílá odpověď jako `form_post`, takže callback má i POST variantu.
+Tělo se parsuje ručně přes `urllib.parse.parse_qs` — `Form(...)` z FastAPI by
+si vyžádalo `python-multipart` navíc.
+
+### E-mail
+
+Odesílá se přes [Resend](https://resend.com) (free tier: 3 000 mailů/měsíc,
+100/den, bez karty). Bez ověřené domény posílá z `onboarding@resend.dev` a
+**jen na adresu, kterou jsi účet zakládal** — což je přesně ten jeden příjemce,
+kterého tahle appka má.
+
+Když `RESEND_API_KEY` není nastavený a `PUBLIC_MODE` je vypnutý, kód se vypíše
+do konzole, takže lokální vývoj nepotřebuje mailový účet. V `PUBLIC_MODE` je
+chybějící klíč tvrdá chyba — logovat živý přihlašovací kód na veřejném serveru
+je únik credentialu.
 
 ## Přidání API klíčů
 
@@ -220,17 +329,66 @@ python scripts/setup_keys.py
 Klíč vkládej vždy sám, přímo do appky nebo skriptu — nikdy ho neposílej do
 chatu s AI asistentem.
 
+### Vlastní model na tomhle počítači
+
+Nahoře v dialogu **API klíče** je sekce *Vlastní model u tebe v počítači*. Když
+si pustíš Ollamu, LM Studio nebo `llama.cpp server`, vloží se sem jeho adresa
+(`http://localhost:11434/v1`, `:1234/v1`, `:8080/v1` jsou presety na jedno
+kliknutí), **Zjistit modely** se endpointu zeptá, co doopravdy nabízí, a
+**Připojit** volbu uloží a hned na ni pošle reálný požadavek — „Uloženo" nic
+nedokazuje.
+
+Router se kvůli tomu měnit nemusel. Lokální server mluví OpenAI protokolem,
+takže je z jeho pohledu jen další `api_base`: dá se připnout v pickeru, platí
+pro něj cooldowny i model health, a když spadne, chain pokračuje dál. Do
+seznamu karet s klíči se ale vědomě nedostane — nemá klíč, registraci ani
+kartu, takže by tam stála karta, na které lže každý ovládací prvek.
+
+Nahoře v sekci je verdikt o hardwaru, ne reklama:
+
+| RAM | Realistický strop | Co to znamená |
+|---|---|---|
+| < 8 GB | ~1B | Na chat model to není. |
+| 8–16 GB | ~7B v Q4 | Vejde se, na procesoru poběží pomalu. |
+| 16–32 GB | ~13B v Q4 | Paměti dost; rychlost řeší grafika. |
+| ≥ 32 GB | 30B+ v Q4 | Prostor i na velké modely. |
+
+Rozhoduje **kvantizace**, ne počet parametrů: 7B v fp16 chce ~14 GB, ten samý
+model v Q4 zhruba 4 GB. Proto se v celé sekci nikde nemluví o „7B" bez toho,
+v čem je zkvantizovaný.
+
+**Na veřejném serveru je celá funkce vypnutá.** `local_llm.available()` vrací
+`False`, když běží `PUBLIC_MODE`, a všechny tři zapisující routy se předem ptají
+`_local_or_403()`. Nechat backend stáhnout URL, kterou někdo zadal do políčka,
+je na notebooku ta funkce samotná — na Renderu je to SSRF do jejich privátní
+sítě.
+
 ## Bezpečnost
 
-Klíč se ukládá **jen** do Windows Credential Manageru (`keyring`). Do souboru
-ani do SQLite se nezapisuje a API ho nikdy nevrací zpět — `GET /api/providers`
-posílá pouze `configured: true/false`.
+API klíč se ukládá **zašifrovaný AES-256-GCM** do databáze. Šifruje se
+`SECRET_KEY`, který žije jen v prostředí serveru — v DB není, v souboru není, a
+API klíč nikdy nevrací zpátky: `GET /api/providers` posílá pouze
+`configured: true/false`.
+
+> Do verze 3 byl klíč jen ve Windows Credential Manageru. Tohle je **vědomé
+> uvolnění toho pravidla**, ne opomenutí: `keyring` nemá v Linuxovém kontejneru
+> funkční backend — každé čtení tam buď spadne, nebo tiše vrátí `None`, což
+> vypadá úplně stejně jako „klíč není nastavený". Bez tyhle změny by deploy
+> nešel udělat vůbec.
+
+Šifrování je autentizované, takže špatný `SECRET_KEY` **selže nahlas** místo
+aby vrátil nesmysl. Ztráta klíče znamená, že se všechny uložené API klíče musí
+vložit znovu — data konverzací se jí netýkají.
+
+Kdo nechce klíč v databázi ani zašifrovaný, může ho dát rovnou do prostředí:
+`PRIZMA_KEY_<CREDENTIAL_ID>` (velkými písmeny) **přebíjí** řádek v DB. Zápis
+klíče, který je takhle zastíněný, vrátí 409 místo aby tiše neudělal nic.
 
 Obrana je vrstvená; každá vrstva chytá něco, co ta předchozí neumí:
 
 | vrstva | co blokuje |
 |---|---|
-| peer musí být `127.0.0.1` / `::1` | přístup z jiného stroje v síti |
+| peer musí být `127.0.0.1` / `::1` — **jen když `PUBLIC_MODE=0`** | přístup z jiného stroje v síti |
 | hlavička `Origin`, když je přítomná, musí být v `settings.cors_origins` | cizí web, který by ti na localhost poslal request z prohlížeče |
 | **session cookie** (`ma_session`, HttpOnly, SameSite=Lax) | jiný lokální proces bez `Origin` hlavičky — tohle byla reálná díra: `PUT /key` bez session vracelo 200, teď vrací 401 |
 | **double-submit CSRF token** (`ma_csrf` cookie + `x-csrf-token` hlavička) | zápis vyvolaný cizí stránkou, která na cookie dosáhne, ale na její obsah ne |
@@ -256,6 +414,16 @@ Odpovědi se renderují `react-markdown` **bez** `rehype-raw` a bez
 `javascript:` a `data:` odkazy skončí s prázdným `href`. Ověřeno podvrženou
 odpovědí s `<script>`, `<img onerror>`, `<svg onload>` a `<iframe>` — nic z toho
 se nespustilo.
+
+**V `PUBLIC_MODE=1` peer check odpadá** — na serveru je každý návštěvník
+non-loopback a kontrola by odmítla všechny. Zbytek tabulky platí beze změny a
+zpřísní se: cookies dostanou `Secure`, `ALLOWED_HOSTS` musí obsahovat skutečnou
+doménu (jinak 421) a `allowed_origins()` se zúží na origin nasazené appky. Že
+tohle všechno opravdu drží, ověřuje `verify_public_mode.py` (20/20): veřejná IP
+projde, cizí `Origin` dostane 403, chybějící CSRF hlavička 403, neznámý `Host`
+421, a cookies se vrací se `Secure`, `HttpOnly` i `SameSite=Lax`.
+
+Peer check nikdy nebyl jediná vrstva — byl ta nejvzdálenější.
 
 **Co to nechrání:** jiný program běžící pod tvým účtem. Ten si credential store
 přečte i bez téhle appky a dokáže si přečíst i cookies, takže endpointy threat
@@ -450,6 +618,11 @@ odpověď poskládaná. Kdo favicon nepošle, dostane monogram z hostname.
   vzít nejde.
 - **Přejmenování, hledání a mazání s potvrzením** v sidebaru; konverzace jsou
   seskupené podle data. Hledání ignoruje diakritiku i velikost písmen.
+- **Tip na prázdné obrazovce** — jeden náhodný, se šipkou na další. Každý
+  jmenuje ovládací prvek, který jde najít, a říká i cenu, ne jen přínos („Max
+  přidá plán a revizi, ale trvá zhruba dvakrát tak dlouho"). Seznam je
+  v `frontend/src/lib/tips.ts` a to pravidlo je jeho vstupenka: co neukazuje na
+  konkrétní ovládání nebo slibuje výhodu zadarmo, tam nepatří.
 - Pod 900 px se sidebar mění na výsuvný drawer se scrimem, přihlašovací
   obrazovka schová hero sloupec a zůstane jen karta.
 
@@ -478,12 +651,120 @@ systém a nic se nerozbije.
 prázdné — a klávesa se chová normálně. Zkratka, která ukradne šipku uprostřed
 psaní, je horší než žádná.
 
+## Deploy
+
+Cíl: appka dostupná z telefonu, aniž by musel běžet počítač. Sestava je
+**Render Free** (web service) + **Neon Free** (Postgres) + **Resend Free**
+(maily). Žádná karta, nic z toho po měsíci nevyprší.
+
+### Proč zrovna tohle
+
+| kandidát | verdikt |
+|---|---|
+| **Render Free** | 750 instance-hodin/měsíc, HTTPS na `*.onrender.com`, Docker, dlouhoběžící proces (SSE funguje). Cena: usne po **15 min** nečinnosti a probouzí se ~minutu, a **nemá persistentní disk**. |
+| **Neon Free** | 0,5 GB, 100 CU-hodin/měsíc, **trvalé, ne trial, bez karty**. Uspí se po 5 min, probouzí se pod sekundu. |
+| **Resend Free** | 3 000 mailů/měsíc, 100/den, bez karty. |
+| Render Free Postgres | ❌ vyprší 30 dní po vytvoření. Neon ne. |
+| Fly.io | ❌ free tier pro nové účty zrušený, vyžaduje kartu. |
+| Koyeb | ❌ free Starter zavřený pro nové registrace. |
+| Hugging Face Spaces | ❌ Docker i Gradio Spaces vyžadují PRO; zadarmo jsou jen statické. |
+| Oracle Cloud Always Free | ⏸ opravdu vždy zapnuté (2 OCPU / 12 GB ARM), ale karta, ruční správa a Oracle si nečinné instance bere zpět. Cesta na později. |
+| Google Cloud Run | ⏸ 2M requestů/měsíc zdarma a rychlý cold start, ale karta a riziko přečerpání. Cesta na později. |
+| Vercel / Netlify / Cloudflare Pages | ❌ jen SPA; SSE backend se do limitů funkcí nevejde a rozdělení originů by vrátilo CORS. |
+
+### Jak to nasadit
+
+1. **Neon** — založ projekt, zkopíruj connection string a přepiš schéma na
+   `postgresql+psycopg://…?sslmode=require`.
+
+2. **`SECRET_KEY`** — vygeneruj si vlastní a nikam ho neposílej:
+
+   ```bash
+   python scripts/gen_secret.py
+   ```
+
+3. **Render** — nový Blueprint z tohohle repa. `render.yaml` popisuje službu
+   celou; doplní se jen hodnoty označené `sync: false`:
+   `SECRET_KEY`, `DATABASE_URL`, `OWNER_EMAIL`, `RESEND_API_KEY`,
+   `GOOGLE_CLIENT_*`, `GITHUB_CLIENT_*`, `CONTACT_URL`.
+
+   Je-li doména jiná než `prizma.onrender.com`, přepiš `ALLOWED_HOSTS`,
+   `PUBLIC_BASE_URL` a `FRONTEND_URL`.
+
+4. **Data z lokálu** (volitelné, obojí čte zdroj read-only):
+
+   ```bash
+   python scripts/migrate_sqlite_to_postgres.py
+   ```
+   ```bash
+   python scripts/migrate_keys_to_db.py
+   ```
+
+   Druhý přečte klíče z Windows Credential Manageru a zapíše je zašifrované
+   tam, kam ukazuje `DATABASE_URL` — klíč se přitom nikde nevypíše ani nezaloguje.
+
+5. **OAuth** — u Googlu a GitHubu zaregistruj redirect URI
+   `https://prizma.onrender.com/api/auth/oauth/<provider>/callback`.
+
+6. **Resend** — vygeneruj klíč a vlož ho jako `RESEND_API_KEY`.
+
+Server v `PUBLIC_MODE=1` **odmítne nastartovat**, když chybí `SECRET_KEY` nebo
+`ALLOWED_HOSTS`, nebo když `PUBLIC_BASE_URL` není `https://`. Je to schválně:
+obojí selhává jinak tiše a pozdě — bez `SECRET_KEY` by appka vypadala v pořádku
+až do prvního chatu, bez `ALLOWED_HOSTS` by každý request skončil na 421.
+
+### Co je na tom nepříjemné
+
+**Cold start.** Render službu po 15 minutách nečinnosti uspí a probuzení trvá
+zhruba minutu. 750 hodin zdarma proti ~730 hodinám v měsíci znamená, že jedna
+trvale běžící free služba se technicky vejde, takže by ji desetiminutový ping na
+`/api/health` udržel vzhůru. Render tohle výslovně nedoporučuje, takže to tady
+zůstává **popsané jako možnost i s tím rizikem**, ne zapnuté.
+
+**Neon se uspává po 5 minutách.** Proto `pool_pre_ping=True` a
+`pool_recycle=300` — connection do uspané compute je mrtvá hned při převzetí z
+poolu, a bez pre-pingu by se to projevilo jako náhodná chyba prvního requestu.
+
+**Postgres je pro hledání v konverzacích lepší než SQLite.** Jeho `ILIKE` skládá
+i Unicode, takže `Čas` konečně najde `čas` — SQLite skládá jen ASCII.
+
+**Jeden origin.** FastAPI servíruje i postavené `frontend/dist`, takže se
+nasazuje jedna služba a CORS z deploye mizí úplně. `/api/*` má striktní
+`default-src 'none'` CSP, dokument tu svou z `<meta>` — kdyby dostal tu API,
+zobrazí se prázdná stránka.
+
+## Na telefonu (PWA)
+
+Není to appka z obchodu, ale nainstalovaná zástupce na plochu, která se spouští
+bez adresního řádku. V prohlížeči na telefonu: *Přidat na plochu*.
+
+- `manifest.webmanifest`, ikony 192/512 + maskable 512 + `apple-touch-icon` 180.
+  Generuje je `npm run icons` z `frontend/scripts/make-icons.mjs` (`sharp`) —
+  výstup je commitnutý, aby build nezávisel na tom, že `sharp` půjde nainstalovat.
+- Service worker (`frontend/public/sw.js`, ručně psaný, bez `vite-plugin-pwa`).
+  Hashované `/assets/*` cache-first, dokument network-first s offline fallbackem.
+  **`/api/*` neodchytává vůbec** — zastaralý seznam konverzací by mátl, ale
+  přehraný POST by utratil kvótu nebo poslal zprávu dvakrát.
+- Nová verze se **neinstaluje potichu**. Worker čeká a appka nabídne „Je k
+  dispozici nová verze" — reload uprostřed streamované odpovědi by ji zahodil.
+- `viewport-fit=cover` + `env(safe-area-inset-*)` na topbaru, composeru a
+  sidebaru, aby výřez a home indikátor nepřekrývaly ovládání.
+- Na dotykových zařízeních (`@media (hover: none)`) jsou akce u zprávy trvale
+  viditelné a mají 40×40 px. Bez toho by na telefonu nešly vyvolat vůbec —
+  odkrýval je `:hover`, který na dotyku neexistuje.
+
+Offline se načte shell z cache a appka řekne, že je offline; odpovídat bez
+připojení neumí a nepředstírá to.
+
 ## Co chybí (vědomě, mimo MVP scope)
 
 - Multi-user — účet je jeden, appka je zamčená, ale ne sdílená.
-- Skutečné přihlašovací formuláře a sociální login — kód je hotový, jen vypnutý;
-  zapne se při deployi (viz [Přihlášení](#přihlášení)).
-- Mobilní appka (iOS/Android) — plánováno později, až bude web verze ověřená.
+- Apple login — kód je hotový, ale bez placeného developer účtu ($99/rok) a
+  ověřené domény ho nejde zapnout. Tlačítko zůstane jako „nenastaveno".
+- Nativní appka (App Store / Play) — PWA na plochu ano, obchod ne. Znamenalo by
+  to Capacitor, developer účty a review proces pro jednoho uživatele.
+- Push notifikace — service worker je na ně připravený, ale bez serveru, který
+  je posílá, by to byla jen kostra.
 - Trénovaný router — routuje LLM plánovač, ne natrénovaný klasifikátor;
   heuristika na klíčová slova/délku zůstala jako fallback.
 - Paměť volby modelu per konverzace — picker je globální a drží se v

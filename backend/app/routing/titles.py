@@ -62,7 +62,7 @@ async def suggest(question: str, answer: str) -> str:
         try:
             response = await litellm.acompletion(
                 model=model,
-                api_key=keystore.get_key(provider.credential_id),
+                **keystore.endpoint(provider),
                 messages=[
                     {"role": "system", "content": _SYSTEM},
                     {"role": "user", "content": exchange},

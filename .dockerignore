@@ -1,0 +1,41 @@
+# Everything here would either be rebuilt inside the image, break it, or leak
+# something out of it. The build context is small on purpose: on a free tier the
+# upload is a real part of every deploy's wall-clock time.
+
+.git
+.gitignore
+.claude
+README.md
+
+# Rebuilt in the `web` stage. Copying a Windows-built dist in would ship
+# whatever happened to be on the laptop rather than what the repo says.
+frontend/dist
+frontend/node_modules
+frontend/.vite
+
+# Chat history and the local SQLite file. The deployed app uses Postgres, and
+# baking a database into an image would publish every local conversation.
+backend/data
+
+# A local virtualenv is Windows binaries; inside a Linux image it is worse than
+# useless, because `pip install` would find it and skip work it must redo.
+backend/.venv
+.venv
+**/__pycache__
+**/*.pyc
+**/*.egg-info
+
+# Secrets never enter the build context. Render supplies them as environment
+# variables at runtime.
+**/.env
+**/.env.*
+!**/.env.example
+
+.vscode
+.idea
+Thumbs.db
+
+# Windows spouštěč. V Linuxovém image ho nic nespustí a .exe by jen zvětšilo
+# upload build kontextu.
+aplikace.exe
+tools

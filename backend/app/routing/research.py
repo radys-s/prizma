@@ -310,7 +310,7 @@ async def _search_once(
 
     response = await litellm.acompletion(
         model=model,
-        api_key=keystore.get_key(provider.credential_id),
+        **keystore.endpoint(provider),
         messages=[
             {"role": "system", "content": _SEARCH_SYSTEM},
             {"role": "user", "content": query[:_QUESTION_CHARS]},
@@ -397,7 +397,7 @@ async def _subquestions(question: str, profile: EffortProfile) -> list[str]:
         try:
             response = await litellm.acompletion(
                 model=model,
-                api_key=keystore.get_key(provider.credential_id),
+                **keystore.endpoint(provider),
                 messages=[
                     {
                         "role": "system",

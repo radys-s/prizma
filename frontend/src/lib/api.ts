@@ -5,6 +5,7 @@ import type {
   CompactInfo,
   Conversation,
   KeyTestResult,
+  LocalStatus,
   Message,
   MessageHit,
   Provider,
@@ -229,6 +230,53 @@ export async function openSignupPage(provider: Provider): Promise<void> {
     /* backend unreachable — the tab fallback below still works */
   }
   window.open(provider.signup_url, "_blank", "noopener,noreferrer");
+}
+
+/* ----------------------------------------------------------- local llm -- */
+
+/**
+ * A model running on this machine, wired in as one more provider.
+ *
+ * All four go through `write()` even though the first only reads: the backend
+ * gates them on local mode and the read is what tells the UI whether to render
+ * the section at all, so a stale cached answer here would show a form that
+ * cannot work. `fetch` without a body is not cached by the browser anyway; the
+ * consistency is for the next person reading this file.
+ */
+export async function fetchLocalStatus(): Promise<LocalStatus> {
+  const res = await fetch("/api/providers/local");
+  assertAuthed(res);
+  if (!res.ok) throw new Error(await detailOf(res, `Načtení selhalo (${res.status})`));
+  return res.json();
+}
+
+/** Asks the endpoint which models it serves, so the slug isn't typed blind. */
+export async function probeLocal(baseUrl: string): Promise<string[]> {
+  const res = await write("/api/providers/local/probe", "POST", { base_url: baseUrl });
+  assertAuthed(res);
+  if (!res.ok) throw new Error(await detailOf(res, `Endpoint neodpověděl (${res.status})`));
+  const body = (await res.json()) as { models: string[] };
+  return body.models;
+}
+
+export async function saveLocal(
+  baseUrl: string,
+  model: string,
+  label: string,
+): Promise<void> {
+  const res = await write("/api/providers/local", "PUT", {
+    base_url: baseUrl,
+    model,
+    label,
+  });
+  assertAuthed(res);
+  if (!res.ok) throw new Error(await detailOf(res, `Uložení selhalo (${res.status})`));
+}
+
+export async function clearLocal(): Promise<void> {
+  const res = await write("/api/providers/local", "DELETE");
+  assertAuthed(res);
+  if (!res.ok) throw new Error(await detailOf(res, `Odpojení selhalo (${res.status})`));
 }
 
 /* ------------------------------------------------------------ settings -- */

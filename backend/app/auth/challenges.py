@@ -227,3 +227,20 @@ def recovery_remaining(session: Session, user_id: int) -> int:
             .where(RecoveryCode.used_at == None)  # noqa: E711
         ).all()
     )
+
+
+def clear_recovery(session: Session, user_id: int) -> None:
+    """Drop every recovery code, used or not.
+
+    Called when the second factor is switched off. `issue_recovery` already
+    replaces them on the way in, so this is not what stops an old code from
+    working after a re-enable — it is that a user who turns 2FA off expects the
+    slip of paper they wrote the codes on to become worthless right then, and
+    not to sit in the database as live credentials for a factor that no longer
+    exists.
+    """
+    for row in session.exec(
+        select(RecoveryCode).where(RecoveryCode.user_id == user_id)
+    ).all():
+        session.delete(row)
+    session.commit()
