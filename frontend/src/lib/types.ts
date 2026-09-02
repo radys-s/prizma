@@ -66,6 +66,30 @@ export interface Provider {
   configured: boolean;
 }
 
+/** What this machine can realistically run, as `/api/providers/local` reports it. */
+export interface LocalHardware {
+  /** Null when the OS wouldn't say — the UI then shows no verdict at all. */
+  ram_gb: number | null;
+  cpu_cores: number;
+  /** Drives the colour of the warning, nothing else. */
+  level: "unknown" | "no" | "tight" | "ok" | "good";
+  verdict: string;
+  /** Largest model size worth trying, e.g. "do ~7B v Q4". */
+  ceiling: string;
+  gpu_note: string;
+}
+
+export interface LocalStatus {
+  /** False on a public server: the backend refuses to fetch a typed-in URL
+   *  there, so the whole section hides rather than offering a dead button. */
+  available: boolean;
+  configured: boolean;
+  base_url: string;
+  model: string;
+  label: string;
+  hardware: LocalHardware;
+}
+
 export interface KeyTestResult {
   /** Whether the *key* authenticated — not whether the request succeeded. */
   ok: boolean;

@@ -126,6 +126,24 @@ def has_key(credential_id: str) -> bool:
         return False
 
 
+def endpoint(provider) -> dict:
+    """The `api_key`/`api_base` pair litellm needs to reach one provider.
+
+    Every call site used to write `api_key=keystore.get_key(...)` by hand,
+    which was correct while every provider was hosted somewhere litellm already
+    knew. A model running on this machine needs a base URL as well, and a
+    second thing to remember at six call sites is a thing that will be
+    forgotten at one of them.
+
+    The placeholder key for a local endpoint is not a secret: litellm's OpenAI
+    client refuses to send a request with no key at all, while Ollama,
+    LM Studio and llama.cpp ignore the header entirely.
+    """
+    if getattr(provider, "api_base", ""):
+        return {"api_base": provider.api_base, "api_key": "local"}
+    return {"api_key": get_key(provider.credential_id)}
+
+
 def stored_ids() -> list[str]:
     """Credential ids with a row in the database. Used by the migration script."""
     with Session(engine) as session:

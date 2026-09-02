@@ -264,7 +264,7 @@ async def _ask_planner(
         try:
             response = await litellm.acompletion(
                 model=model,
-                api_key=keystore.get_key(provider.credential_id),
+                **keystore.endpoint(provider),
                 messages=[{"role": "system", "content": system}, *_condense(messages)],
                 response_format={"type": "json_object"},
                 temperature=0,

@@ -1,3 +1,11 @@
+# Declared explicitly rather than left to pip's legacy fallback: the Docker
+# build installs this package with no network-resolved defaults to fall back on,
+# and an implicit build backend is the kind of thing that works locally and
+# fails once, in a build log, on a Sunday.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "multiagent-backend"
 version = "0.1.0"

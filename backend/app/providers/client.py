@@ -33,7 +33,7 @@ import litellm
 
 from app import settings_store
 from app.providers import keystore, model_health
-from app.providers.registry import BY_ID, ProviderModel
+from app.providers.registry import ProviderModel, by_id
 from app.routing import plan as planning
 from app.routing import research as researching
 from app.routing import selector
@@ -152,6 +152,7 @@ def _collect_usage(chunk, usage: dict) -> None:
         usage["total"] = usage.get("total", 0) + total
 
 
+
 async def _try_stream(
     provider: ProviderModel,
     model: str,
@@ -159,10 +160,9 @@ async def _try_stream(
     profile: EffortProfile,
     usage: dict,
 ) -> AsyncIterator[str]:
-    api_key = keystore.get_key(provider.credential_id)
     response = await litellm.acompletion(
         model=model,
-        api_key=api_key,
+        **keystore.endpoint(provider),
         messages=messages,
         stream=True,
         timeout=_STREAM_TIMEOUT,
@@ -220,7 +220,7 @@ async def _stream_review(
 
     response = await litellm.acompletion(
         model=model,
-        api_key=keystore.get_key(provider.credential_id),
+        **keystore.endpoint(provider),
         messages=[
             {
                 "role": "system",
@@ -300,7 +300,7 @@ async def stream_chat(
     question = next(
         (m["content"] for m in reversed(messages) if m.get("role") == "user"), ""
     )
-    pinned_provider = BY_ID.get(pinned) if pinned else None
+    pinned_provider = by_id(pinned) if pinned else None
     attempts: list[Attempt] = []
     usage: dict = {}
 

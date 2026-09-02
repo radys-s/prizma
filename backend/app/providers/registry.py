@@ -102,6 +102,14 @@ class ProviderModel:
     # NOT make them count toward `MIN_CONFIGURED_SLOTS` — that check filters on
     # "can answer a question", and a keyless searcher cannot.
     keyless: bool = False
+    # Overrides where the request is sent. Empty for everything hosted —
+    # litellm knows those endpoints from the slug. Set only by the local
+    # endpoint in `providers/local_llm.py`, which is a URL the user typed.
+    api_base: str = ""
+    # True for an endpoint running on this machine. The UI uses it to say so
+    # rather than offering a signup link, and nothing here ever leaves the
+    # device — which is the reason someone sets one up.
+    local: bool = False
 
     @property
     def credential_id(self) -> str:
@@ -542,10 +550,36 @@ REGISTRY: list[ProviderModel] = [
 BY_ID: dict[str, ProviderModel] = {p.id: p for p in REGISTRY}
 
 
+def active() -> list[ProviderModel]:
+    """The static registry plus whatever the user configured at runtime.
+
+    Only the local endpoint is dynamic, and it has to be: its URL and model
+    name are typed by the user, so it cannot exist as a frozen row above. Every
+    caller that asks "what providers are there" goes through here rather than
+    reading `REGISTRY`, otherwise a locally hosted model would be invisible to
+    exactly the parts that need to see it — the selector, the model picker and
+    the settings dialog.
+
+    Imported inside the function because `local_llm` imports `ProviderModel`
+    from this module; at call time both are loaded and there is no cycle.
+    """
+    from app.providers import local_llm
+
+    extra = local_llm.entry()
+    return [*REGISTRY, extra] if extra is not None else list(REGISTRY)
+
+
+def by_id(provider_id: str) -> ProviderModel | None:
+    """Lookup across `active()`, so a local endpoint is findable by id too."""
+    if provider_id in BY_ID:
+        return BY_ID[provider_id]
+    return next((p for p in active() if p.id == provider_id), None)
+
+
 def providers_for_capability(capability: str) -> list[ProviderModel]:
-    return [p for p in REGISTRY if capability in p.capabilities]
+    return [p for p in active() if capability in p.capabilities]
 
 
 def providers_sharing_key(credential_id: str) -> list[ProviderModel]:
     """Every registry entry unlocked by one credential-store entry."""
-    return [p for p in REGISTRY if p.credential_id == credential_id]
+    return [p for p in active() if p.credential_id == credential_id]

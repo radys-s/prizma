@@ -556,6 +556,21 @@ textarea {
   color: var(--warning);
 }
 
+/* A chip that is a button — the presets and the probed model names in the
+   local-model section. Same pill, but it has to look pressable, so it takes a
+   pointer and reacts to hover. `.chip.ok` still wins on colour, which is how
+   the currently selected model stays marked. */
+.chip-btn {
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.chip-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 /* ------------------------------------------------------------- alert ----- */
 
 /* Anchored above the composer, one line high, dismissible. The old block sat
@@ -1582,6 +1597,57 @@ textarea {
   }
 }
 
+/* ------------------------------------------------------------- tip ------ */
+
+/* One rotating line about a feature that is real but not visible. It sits
+   below the suggestions and is deliberately quiet: muted text, no border, no
+   background — it is the last thing on the screen worth reading, not the
+   first. Fixed max-width so a long tip does not stretch to the full column
+   and turn the empty screen into a paragraph. */
+.tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 520px;
+  margin-top: 26px;
+  padding: 0 4px;
+  text-align: left;
+}
+
+.tip-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-faint, var(--text-muted));
+}
+
+.tip-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* Only shows itself on hover over the whole tip: a permanently visible refresh
+   button next to a hint reads like something needs doing. */
+.tip-next {
+  flex-shrink: 0;
+  margin-top: -2px;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.tip:hover .tip-next,
+.tip-next:focus-visible {
+  opacity: 1;
+}
+
+/* Touch has no hover, so on a phone the button is simply always there. */
+@media (hover: none) {
+  .tip-next {
+    opacity: 1;
+  }
+}
+
 /* ---------------------------------------------------------- composer ---- */
 
 .composer-wrap {
@@ -2464,7 +2530,11 @@ kbd.mono {
   display: grid;
   place-items: center;
   padding: clamp(20px, 5vw, 48px);
-  overflow: hidden;
+  /* `clip`, not `hidden`. The aurora blobs are wider than the viewport, and
+     `hidden` leaves the box scrollable even though no scrollbar shows — so the
+     browser scrolling a freshly focused input into view drags the entire login
+     screen sideways and it never comes back. `clip` has no scrollport at all. */
+  overflow: clip;
   background: var(--bg-sidebar);
 }
 
@@ -2888,15 +2958,130 @@ kbd.mono {
   text-wrap: pretty;
 }
 
+/* Unlike the brand mark, this one carries meaning — an envelope or a phone,
+   telling the user where the code they're being asked for actually is. So it
+   stays visible at every width. */
+.auth-card-mark-plain {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+  color: var(--text-muted);
+}
+
+/* Six boxes rather than one input: the shape is the instruction. */
+.auth-code {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.auth-code-box {
+  width: 100%;
+  /* Tall enough to clear the 44px touch target on a phone, where this is the
+     one control on screen and mistyping means starting the login over. */
+  height: 52px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+  color: var(--text);
+  font: inherit;
+  /* Tabular figures so the boxes don't jitter as digits land in them. */
+  font-variant-numeric: tabular-nums;
+  font-size: 21px;
+  font-weight: 600;
+  text-align: center;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.auth-code-box:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.auth-code-box[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.auth-code-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.auth-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 2px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.auth-link:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.auth-link:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.auth-link-block {
+  display: flex;
+  width: 100%;
+  margin-top: 14px;
+  justify-content: center;
+}
+
+@media (max-width: 400px) {
+  /* Six boxes stop fitting well below ~400px; shrink them rather than letting
+     the row overflow the card. */
+  .auth-code {
+    gap: 6px;
+  }
+
+  .auth-code-box {
+    height: 46px;
+    font-size: 18px;
+  }
+}
+
 /* Full-screen spinner shown while the auth state is still being fetched, so
    the login form never flashes before we know whether it's needed. */
 .auth-boot {
   display: grid;
   place-items: center;
+  /* `place-content`, not just `place-items`: implicit grid rows stretch to fill
+     the 100dvh by default, so the mark, the message and the button end up
+     spread across the whole screen with the text floating in the middle of
+     nowhere. This packs the three of them together and centres the group. */
+  place-content: center;
   min-height: 100dvh;
   gap: 14px;
+  padding: 24px;
   color: var(--text-faint);
   background: var(--bg-sidebar);
+  text-align: center;
+}
+
+.auth-boot span {
+  max-width: 34ch;
+  line-height: 1.55;
 }
 
 /* -------------------------------------------------------- animations ---- */
@@ -3084,5 +3269,190 @@ kbd.mono {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ------------------------------------------------------- connected accounts */
+
+.identity-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.identity-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+}
+
+.identity-row .setting-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.identity-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+}
+
+/* An input and its button on one line; the input takes whatever is left. */
+.identity-inline {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.identity-inline .instructions-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.totp-setup {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+}
+
+.totp-link {
+  font-size: 12.5px;
+  font-weight: 550;
+}
+
+.totp-secret {
+  /* Selectable and wrapping: on a desktop this string gets typed into a phone
+     by hand, so it has to be readable in full rather than clipped. */
+  display: block;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  word-break: break-all;
+  user-select: all;
+}
+
+.recovery-codes {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--warn-border, var(--border-strong));
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+}
+
+.recovery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 7px;
+}
+
+.recovery-grid code {
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  text-align: center;
+  user-select: all;
+}
+
+/* -------------------------------------------------- update toast --------- */
+
+.update-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 10px 10px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  font-size: 13.5px;
+}
+
+/* ------------------------------------------------ safe areas (PWA) ------- */
+
+/* Installed to a home screen the app runs full-bleed under the notch and the
+   home indicator — `viewport-fit=cover` in index.html asks for exactly that,
+   because a letterboxed standalone app looks like a website in a box. The
+   price is that the chrome has to pad itself back out. These insets are 0 on
+   every desktop browser and inside a normal tab, so the rules are
+   unconditional rather than hidden behind a display-mode query. */
+
+.topbar {
+  /* The status bar is translucent in standalone mode, so the bar has to grow
+     rather than shift — shifting would leave a transparent strip above it. */
+  height: calc(var(--topbar-h) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+}
+
+.composer-wrap {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  padding-left: max(clamp(16px, 4vw, 32px), env(safe-area-inset-left));
+  padding-right: max(clamp(16px, 4vw, 32px), env(safe-area-inset-right));
+}
+
+.sidebar-inner {
+  padding-top: max(10px, env(safe-area-inset-top));
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  padding-left: max(10px, env(safe-area-inset-left));
+}
+
+.auth-stage {
+  padding-top: max(clamp(20px, 5vw, 48px), env(safe-area-inset-top));
+  padding-bottom: max(clamp(20px, 5vw, 48px), env(safe-area-inset-bottom));
+}
+
+/* ---------------------------------------------------- touch targets ------ */
+
+/* `hover: none` is the honest test — a touch screen, not a narrow window. A
+   desktop browser resized to phone width still has a mouse and should keep the
+   quiet, hover-revealed row. */
+@media (hover: none) {
+  /* Without this the message actions are unreachable on a phone: there is no
+     hover to reveal them, and `:focus-within` needs a tap that the invisible
+     button cannot receive. They stay dimmed rather than fully lit so they do
+     not compete with the message itself. */
+  .message-actions {
+    opacity: 0.75;
+  }
+
+  /* 30px is a comfortable mouse target and a poor thumb one. 40 with 4px
+     between them clears the gap where a tap lands on the neighbour. */
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .message-actions {
+    gap: 4px;
+    margin-top: 2px;
   }
 }

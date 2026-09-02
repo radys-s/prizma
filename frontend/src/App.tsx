@@ -30,6 +30,7 @@ import {
   type StreamHandlers,
 } from "./lib/api";
 import { conversationToMarkdown, downloadMarkdown, exportFilename } from "./lib/export";
+import { useServiceWorker } from "./lib/pwa";
 import { loadSetting, saveSetting } from "./lib/storage";
 import { applyTheme, loadTheme, saveTheme, watchSystem, type Theme } from "./lib/theme";
 import { useAutoScroll } from "./lib/useAutoScroll";
@@ -70,7 +71,33 @@ function patchLast(
  * screen, or the app. Every authenticated screen lives below this, so no
  * component further down has to think about being logged out.
  */
+/**
+ * A new build is waiting in the service worker. Deliberately a prompt and not a
+ * silent reload: the reload throws away whatever is on screen, and doing that
+ * mid-answer is worse than running yesterday's bundle for another minute.
+ */
+function UpdateToast({ onApply }: { onApply: () => void }) {
+  return (
+    <div className="update-toast" role="status">
+      <span>Je k dispozici nová verze.</span>
+      <button type="button" className="btn btn-primary" onClick={onApply}>
+        Načíst
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
+  const { updateReady, applyUpdate } = useServiceWorker();
+  return (
+    <>
+      <AppShell />
+      {updateReady && <UpdateToast onApply={applyUpdate} />}
+    </>
+  );
+}
+
+function AppShell() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [booted, setBooted] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -103,7 +130,15 @@ export default function App() {
     return (
       <div className="auth-boot">
         <PrizmaMark size={40} />
-        <span>Backend neodpovídá — spusť uvicorn na portu 8000.</span>
+        {/* Two very different situations, one screen. Installed on a phone the
+            cause is almost always the network; on Tomáš's desktop it is almost
+            always that uvicorn is not running. Naming both beats naming the
+            wrong one. */}
+        <span>
+          {navigator.onLine
+            ? "Server neodpovídá. Pokud běží Prizma lokálně, zkontroluj, že běží uvicorn na portu 8000."
+            : "Jsi offline. Aplikace se načetla z paměti telefonu, ale odpovídat bez připojení neumí."}
+        </span>
         <button type="button" className="btn btn-primary" onClick={refreshAuth}>
           Zkusit znovu
         </button>
@@ -122,6 +157,8 @@ export default function App() {
       key={auth.user?.provider ?? "local"}
       accountLabel={auth.user?.email || auth.user?.display_name || "Přihlášeno"}
       onSignedOut={refreshAuth}
+      auth={auth}
+      onAuthChanged={refreshAuth}
     />
   );
 }
@@ -129,9 +166,12 @@ export default function App() {
 interface ChatAppProps {
   accountLabel: string;
   onSignedOut: () => void;
+  /** Passed down so the settings modal can list and change sign-in methods. */
+  auth: AuthState;
+  onAuthChanged: () => void;
 }
 
-function ChatApp({ accountLabel, onSignedOut }: ChatAppProps) {
+function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProps) {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentId, setCurrentId] = useState<number | null>(null);
@@ -819,6 +859,8 @@ function ChatApp({ accountLabel, onSignedOut }: ChatAppProps) {
           customInstructionsMax={customInstructionsMax}
           onCustomInstructionsChange={setCustomInstructions}
           onClose={() => setSettingsOpen(false)}
+          auth={auth}
+          onAuthChanged={onAuthChanged}
           onChanged={() => {
             // A key change moves both lists: what's configured, and what the
             // model picker is allowed to offer.

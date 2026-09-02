@@ -22,8 +22,8 @@ from starlette.concurrency import run_in_threadpool
 
 from app import crypto
 from app.config import settings
-from app.providers import keystore, model_health
-from app.providers.registry import BY_ID, REGISTRY, ProviderModel
+from app.providers import keystore, local_llm, model_health
+from app.providers.registry import ProviderModel, active, by_id
 from app.routing import websearch
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
@@ -32,7 +32,7 @@ _TEST_TIMEOUT_SECONDS = 20.0
 
 
 def _provider_or_404(provider_id: str) -> ProviderModel:
-    provider = BY_ID.get(provider_id)
+    provider = by_id(provider_id)
     if provider is None:
         raise HTTPException(status_code=404, detail=f"Neznámý provider: {provider_id}")
     return provider
@@ -63,7 +63,14 @@ def list_providers():
             # would be accepted and then ignored.
             "from_env": keystore.is_shadowed(p.credential_id),
         }
-        for p in REGISTRY
+        # The local endpoint is deliberately absent. This list drives the key
+        # dialog, and a model on this machine has no key to paste, no signup
+        # page and no card requirement — rendering it here would produce a
+        # card whose every control is a lie. It is managed by `/local` below,
+        # and it is still reachable everywhere it matters: the pin dropdown
+        # reads `/api/routing/options`, and `POST /local/test` tests it.
+        for p in active()
+        if not p.local
     ]
 
 
@@ -123,6 +130,112 @@ async def open_signup(provider_id: str):
         return {"opened": False, "url": provider.signup_url}
     opened = await run_in_threadpool(webbrowser.open, provider.signup_url)
     return {"opened": bool(opened), "url": provider.signup_url}
+
+
+# ----------------------------------------------------- a model on this machine
+#
+# Routes live under `/local` rather than `/{provider_id}/...` so they cannot
+# collide with a registry id, and every one of them refuses in public mode:
+# they make the backend fetch a URL the caller typed, which on a laptop is the
+# feature and on a shared server is a request-forgery hole pointed at the
+# hosting provider's private network.
+
+
+class LocalPayload(BaseModel):
+    base_url: str = Field(min_length=1, max_length=300)
+    model: str = Field(min_length=1, max_length=200)
+    label: str = Field(default="", max_length=80)
+
+
+class ProbePayload(BaseModel):
+    base_url: str = Field(min_length=1, max_length=300)
+
+
+def _local_or_403() -> None:
+    if not local_llm.available():
+        raise HTTPException(
+            status_code=403,
+            detail="Vlastní model jde připojit jen v lokálním běhu, ne na serveru.",
+        )
+
+
+@router.get("/local")
+def local_status():
+    """Configuration plus what this machine can realistically run."""
+    current = local_llm.config()
+    return {
+        "available": local_llm.available(),
+        "configured": current.ready,
+        "base_url": current.base_url,
+        "model": current.model,
+        "label": current.label,
+        "hardware": local_llm.hardware(),
+    }
+
+
+@router.post("/local/probe")
+async def local_probe(payload: ProbePayload):
+    """Asks the endpoint which models it serves, so the name isn't guessed."""
+    _local_or_403()
+    try:
+        models = await local_llm.probe(payload.base_url)
+    except local_llm.LocalError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"models": models}
+
+
+@router.put("/local")
+def local_save(payload: LocalPayload):
+    _local_or_403()
+    current = local_llm.save(payload.base_url, payload.model, payload.label)
+    if not current.ready:
+        raise HTTPException(status_code=422, detail="Chybí adresa nebo název modelu.")
+    return {"configured": True, "base_url": current.base_url, "model": current.model}
+
+
+@router.delete("/local")
+def local_clear():
+    _local_or_403()
+    local_llm.clear()
+    return {"configured": False}
+
+
+def _classify_local(exc: Exception, model: str) -> tuple[bool, str, str]:
+    """The same failures, for an endpoint on this machine.
+
+    Every message in `_classify` is about a key, and a local endpoint has none
+    — the placeholder `keystore.endpoint` sends is ignored by Ollama, LM Studio
+    and llama.cpp alike. Reusing those strings here would answer a wrong base
+    URL with "klíč prošel ověřením, ale model už provider nenabízí", which
+    points at the one thing that cannot possibly be wrong.
+
+    The two failures that actually happen are: the tool is not running, and the
+    URL or the model name is not the one it serves. Both are said plainly.
+    """
+    # `openai/` is how litellm is told which protocol to speak; the user never
+    # typed it and should not have to wonder whether it belongs in the field.
+    model = model.removeprefix("openai/")
+    if isinstance(exc, (litellm.APIConnectionError, litellm.Timeout, asyncio.TimeoutError)):
+        return (
+            False,
+            "error",
+            "Na té adrese nikdo neodpovídá. Zkontroluj, jestli nástroj s modelem běží.",
+        )
+    if isinstance(exc, litellm.NotFoundError):
+        return (
+            False,
+            "error",
+            f"Endpoint odpověděl, ale model {model} nezná. Zkontroluj název "
+            "tlačítkem „Zjistit modely“ a jestli adresa končí na /v1.",
+        )
+    if isinstance(exc, (litellm.ServiceUnavailableError, litellm.InternalServerError)):
+        return (
+            False,
+            "error",
+            "Endpoint běží, ale požadavek mu spadl. Podívej se do jeho logu — "
+            "typicky se model nevešel do paměti.",
+        )
+    return False, "error", f"Endpoint selhal: {str(exc)[:200]}"
 
 
 def _classify(exc: Exception, model: str) -> tuple[bool, str, str]:
@@ -207,7 +320,10 @@ async def test_provider_key(provider_id: str):
     """
     provider = _provider_or_404(provider_id)
     api_key = keystore.get_key(provider.credential_id)
-    if not api_key:
+    # A local endpoint has no key to test — what is worth testing there is
+    # whether the thing is running and whether the slug is one it serves, and
+    # the completion below answers both.
+    if not api_key and not provider.local:
         return {"ok": False, "level": "error", "detail": "Pro tohoto providera není uložený žádný klíč."}
 
     if provider.search_backend:
@@ -232,7 +348,7 @@ async def test_provider_key(provider_id: str):
             await asyncio.wait_for(
                 litellm.acompletion(
                     model=model,
-                    api_key=api_key,
+                    **keystore.endpoint(provider),
                     messages=[{"role": "user", "content": "ping"}],
                     max_tokens=1,
                     timeout=15,
@@ -240,12 +356,19 @@ async def test_provider_key(provider_id: str):
                 timeout=_TEST_TIMEOUT_SECONDS,
             )
         except Exception as exc:  # litellm raises a wide family of provider errors
-            last = _classify(exc, model)
-            if isinstance(exc, litellm.NotFoundError):
+            last = _classify_local(exc, model) if provider.local else _classify(exc, model)
+            if isinstance(exc, litellm.NotFoundError) and not provider.local:
+                # Deliberately not for a local endpoint: there is one slug, and
+                # a 404 there means the URL or the name is wrong, not that a
+                # provider retired the model. Blacklisting it would leave the
+                # slug dead after the user fixed the actual mistake.
                 model_health.mark_dead(model)
                 continue  # a retired slug says nothing about the key — try the next
             break
 
+        if provider.local:
+            shown = model.removeprefix("openai/")  # litellm's prefix, not the user's
+            return {"ok": True, "level": "ok", "detail": f"Endpoint běží a {shown} odpovídá."}
         return {"ok": True, "level": "ok", "detail": f"Klíč funguje. Odpovědělo {model}."}
 
     ok, level, detail = last or (False, "error", "Test selhal.")

@@ -20,6 +20,7 @@ issues cookies. A password alone is never enough, which is the whole point of
 the second factor.
 """
 
+import hmac
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -29,7 +30,7 @@ from sqlmodel import Session
 
 from app import mail
 from app.auth import challenges, core, identities, oauth, throttle, totp
-from app.auth.guard import enforce_origin
+from app.auth.guard import SAFE_METHODS, enforce_origin
 from app.config import settings
 from app.db import get_session
 from app.models.auth import AppUser
@@ -125,6 +126,41 @@ def _current_user(request: Request, session: Session) -> AppUser | None:
     if auth is None:
         return None
     return session.get(AppUser, auth.user_id)
+
+
+def _require_session(request: Request, session: Session) -> AppUser:
+    """The signed-in account, plus the CSRF check `require_auth` performs.
+
+    This router cannot take `require_auth` as a dependency: it also carries the
+    routes used *before* there is a session, and demanding one there would lock
+    everybody out of their own login screen. So the third layer is applied here
+    by hand — and it has to be applied, because these are the routes that
+    change the way into the account. `/passcode` rewrites the access code,
+    `/totp/disable` switches off the second factor, `DELETE /identities/{id}`
+    removes a way in. Those are precisely what a CSRF token exists to stop
+    another page from doing on the user's behalf.
+
+    `SameSite=lax` and the Origin allowlist already cover a browser attacker.
+    This is the layer that does not assume the caller is a browser obeying
+    either of them.
+
+    `logout` deliberately stays outside this: the worst a forged logout does is
+    annoy, while a stale CSRF cookie that blocked one would leave a user unable
+    to sign out of their own account.
+    """
+    auth = core.resolve_session(session, request.cookies.get(core.SESSION_COOKIE))
+    if auth is None:
+        raise HTTPException(status_code=401, detail="Nepřihlášeno.")
+
+    if request.method not in SAFE_METHODS:
+        sent = request.headers.get(core.CSRF_HEADER, "")
+        if not hmac.compare_digest(sent, auth.csrf_token):
+            raise HTTPException(status_code=403, detail="Chybí nebo nesedí CSRF token.")
+
+    user = session.get(AppUser, auth.user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Nepřihlášeno.")
+    return user
 
 
 def _sign_in(session: Session, response: Response, user: AppUser, ip: str) -> dict:
@@ -277,9 +313,7 @@ def set_passcode(
     here, from inside, by someone who is already in.
     """
     enforce_origin(request)
-    user = _current_user(request, session)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Nepřihlášeno.")
+    user = _require_session(request, session)
 
     passcode = payload.passcode.strip()
     if len(passcode) < core.MIN_PASSCODE_LEN:
@@ -553,9 +587,7 @@ async def email_resend(
 def totp_setup(request: Request, session: Session = Depends(get_session)):
     """Mint a secret. Not active until `/totp/confirm` proves the app agrees."""
     enforce_origin(request)
-    user = _current_user(request, session)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Nepřihlášeno.")
+    user = _require_session(request, session)
 
     secret = totp.secret()
     user.totp_secret = secret
@@ -573,9 +605,7 @@ def totp_confirm(
     session: Session = Depends(get_session),
 ):
     enforce_origin(request)
-    user = _current_user(request, session)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Nepřihlášeno.")
+    user = _require_session(request, session)
     if not user.totp_secret:
         raise HTTPException(status_code=409, detail="Nejdřív si nech vygenerovat klíč.")
     if not totp.verify(user.totp_secret, payload.code):
@@ -592,13 +622,12 @@ def totp_confirm(
 @router.post("/totp/disable")
 def totp_disable(request: Request, session: Session = Depends(get_session)):
     enforce_origin(request)
-    user = _current_user(request, session)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Nepřihlášeno.")
+    user = _require_session(request, session)
     user.totp_secret = None
     user.totp_confirmed = False
     session.add(user)
     session.commit()
+    challenges.clear_recovery(session, user.id)
     return {"confirmed": False}
 
 
@@ -612,9 +641,7 @@ def unlink_identity(
     session: Session = Depends(get_session),
 ):
     enforce_origin(request)
-    user = _current_user(request, session)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Nepřihlášeno.")
+    user = _require_session(request, session)
     try:
         identities.unlink(session, user.id, identity_id)
     except LookupError as exc:

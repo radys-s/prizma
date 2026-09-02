@@ -2,7 +2,10 @@
 <html lang="cs">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `viewport-fit=cover` lets the app paint under the notch and the home
+         indicator; `index.css` then pads the chrome back out with
+         `env(safe-area-inset-*)` so nothing lands under them. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#f0eee6" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#1f1e1d" media="(prefers-color-scheme: dark)" />
@@ -18,6 +21,14 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' fill='none' stroke-linecap='round'%3E%3Cpath d='M1 19.5H13' stroke='%238a867c' stroke-width='2.4'/%3E%3Cpath d='M20 6.5 33.5 31.5H6.5Z' stroke='%238a867c' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M26.6 20.5 40 10.5' stroke='%23f2c879' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5 40 15.5' stroke='%23e59356' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5H40' stroke='%23d9635a' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5 40 25.5' stroke='%23a86fc4' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5 40 30.5' stroke='%235d9fd6' stroke-width='2.4'/%3E%3C/svg%3E"
     />
     <title>Prizma</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- iOS reads none of the manifest: the home-screen icon, the
+         standalone launch and the status bar each need their own tag. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Prizma" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <!-- Applies a *forced* theme before the first paint. Without this, a user
          who picked light on a dark OS would see one dark frame on every load,
          which is the single most obvious "unfinished app" tell there is.

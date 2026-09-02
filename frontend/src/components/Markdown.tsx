@@ -21,6 +21,33 @@ function nodeText(node: ReactNode): string {
  */
 const HIGHLIGHT = [rehypeHighlight, { detect: false, ignoreMissing: true }];
 
+const BR = /<br\s*\/?>/gi;
+const TABLE_ROW = /^\s*\|/;
+
+/**
+ * Models write `<br>` into markdown constantly, because a GFM table cell cannot
+ * contain a newline and that is the only way they know to break a line inside
+ * one. We do not render raw HTML — `rehype-raw` would hand model output a
+ * direct path into the DOM — so those tags arrive on screen as literal text,
+ * which looks like a bug in the app rather than a quirk of the model.
+ *
+ * So they are translated instead of rendered. Outside a table a `<br>` really
+ * is a line break. Inside one it cannot be, since a newline would end the row —
+ * a space is the most it can honestly become, and it reads correctly because
+ * the models that do this are already writing bullets on either side.
+ */
+function normalise(content: string): string {
+  if (!BR.test(content)) {
+    BR.lastIndex = 0;
+    return content;
+  }
+  BR.lastIndex = 0;
+  return content
+    .split("\n")
+    .map((line) => line.replace(BR, TABLE_ROW.test(line) ? " " : "\n"))
+    .join("\n");
+}
+
 interface Props {
   content: string;
   /** How many sources this message has, so `[n]` links only when n exists. */
@@ -37,6 +64,8 @@ export const Markdown = memo(function Markdown({
   // Rebuilt only when the source count changes: react-markdown reconstructs its
   // processor whenever this array's identity does, and that is not cheap to do
   // on every streamed token.
+  const source = useMemo(() => normalise(content), [content]);
+
   const rehypePlugins = useMemo(
     () => [HIGHLIGHT, rehypeCitations(sourceCount, anchorPrefix)] as never,
     [sourceCount, anchorPrefix]
@@ -88,7 +117,7 @@ export const Markdown = memo(function Markdown({
           },
         }}
       >
-        {content}
+        {source}
       </ReactMarkdown>
     </div>
   );

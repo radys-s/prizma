@@ -1,5 +1,7 @@
-import { Code, Globe, Wand2 } from "lucide-react";
+import { Code, Globe, Lightbulb, RefreshCw, Wand2 } from "lucide-react";
+import { useState } from "react";
 
+import { randomTip } from "../lib/tips";
 import type { SearchMode } from "../lib/types";
 import { PrizmaMark } from "./Logo";
 
@@ -42,6 +44,10 @@ interface Props {
 }
 
 export function EmptyState({ onPick }: Props) {
+  // Picked once per mount rather than per render: a tip that changed every
+  // time React re-rendered would flicker while the user typed in the composer.
+  const [tip, setTip] = useState(() => randomTip());
+
   return (
     <div className="empty-state">
       <div className="empty-mark">
@@ -63,6 +69,20 @@ export function EmptyState({ onPick }: Props) {
             <span className="suggestion-tag">{tag}</span>
           </button>
         ))}
+      </div>
+
+      <div className="tip">
+        <Lightbulb size={14} className="tip-icon" />
+        <p className="tip-text">{tip.text}</p>
+        <button
+          type="button"
+          className="icon-btn tip-next"
+          onClick={() => setTip((prev) => randomTip(prev))}
+          aria-label="Další tip"
+          title="Další tip"
+        >
+          <RefreshCw size={13} />
+        </button>
       </div>
     </div>
   );
