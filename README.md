@@ -180,6 +180,15 @@ udělat jenom jednou, není build. Cenou je **C# 5**: žádná interpolace řet�
 > portů: zavřený port Norton zahazuje místo odmítnutí, takže jedenáct sond
 > znamenalo dvacet sekund černého okna, než se server vůbec začal spouštět.
 
+> **První spuštění po přebuildu se může zaseknout.** Pozorované chování na tomhle
+> stroji: hned po `build.ps1` skončil první pokus s procesem `python.exe`, který
+> měl jedno vlákno ve stavu *Suspended*, nulový čas na procesoru a 2 MB paměti —
+> tedy nikdy se nerozeběhl. Zavřít okno a kliknout znovu stačilo, další spuštění
+> už naběhla normálně. Vypadá to na kontrolu nové binárky bezpečnostním
+> softwarem; jistotu bez pohledu do jeho logu nemám, takže to sem píšu jako
+> pozorování, ne jako diagnózu. Tebe to potká leda po rebuildu — na hotovém
+> `aplikace.exe` se to neopakovalo.
+
 ## Přihlášení
 
 Appka je pořád **single-user** — účet je jeden a nedá se z něj udělat víc. Co se
