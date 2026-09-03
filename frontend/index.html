@@ -15,11 +15,13 @@
     />
     <!-- Referrer never leaves this machine anyway; saying so costs nothing. -->
     <meta name="referrer" content="no-referrer" />
-    <!-- The prism mark, inlined so the tab icon needs no extra request. -->
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' fill='none' stroke-linecap='round'%3E%3Cpath d='M1 19.5H13' stroke='%238a867c' stroke-width='2.4'/%3E%3Cpath d='M20 6.5 33.5 31.5H6.5Z' stroke='%238a867c' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M26.6 20.5 40 10.5' stroke='%23f2c879' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5 40 15.5' stroke='%23e59356' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5H40' stroke='%23d9635a' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5 40 25.5' stroke='%23a86fc4' stroke-width='2.4'/%3E%3Cpath d='M26.6 20.5 40 30.5' stroke='%235d9fd6' stroke-width='2.4'/%3E%3C/svg%3E"
-    />
+    <!-- Znak v dlaždici, inlinovaný, aby si ikona záložky neřekla o další
+         request. Dlaždice tu je schválně: samotný obrys by na světlém i
+         tmavém panelu záložek pokaždé sedl na jinou barvu pozadí, kdežto
+         dlaždice vypadá všude stejně — a shodně s ikonou na ploše.
+         Geometrie je táž jako v `src/components/Logo.tsx`; ta je zdroj
+         pravdy, tohle a `tools/icons/make_icons.py` ji kopírují ručně. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' fill='none'%3E%3Cdefs%3E%3ClinearGradient id='s' x1='4' y1='34' x2='36' y2='6' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%235d9fd6'/%3E%3Cstop offset='.27' stop-color='%23a86fc4'/%3E%3Cstop offset='.52' stop-color='%23d9635a'/%3E%3Cstop offset='.76' stop-color='%23e59356'/%3E%3Cstop offset='1' stop-color='%23f2c879'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='40' height='40' rx='8.8' fill='%231f1e1d'/%3E%3Cg transform='translate(7.6 7.6) scale(.62)'%3E%3Cpath d='M20 6.6 33.4 30.4H6.6Z' fill='%23f0eee6' fill-opacity='.12'/%3E%3Cpath d='M2.4 24H18L37 11' stroke='%23f0eee6' stroke-width='3.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M20 6.6 33.4 30.4H6.6Z' stroke='url(%23s)' stroke-width='4' stroke-linejoin='round'/%3E%3C/g%3E%3C/svg%3E" />
     <title>Prizma</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <!-- iOS reads none of the manifest: the home-screen icon, the

@@ -17,7 +17,7 @@ import { searchMessages } from "../lib/api";
 import { dayBucket, normalize } from "../lib/date";
 import type { Theme } from "../lib/theme";
 import type { Conversation, MessageHit } from "../lib/types";
-import { PrizmaMark } from "./Logo";
+import { PrizmaTile } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 
 const BUCKET_ORDER = ["Dnes", "Včera", "Posledních 7 dní", "Starší"];
@@ -168,8 +168,8 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-inner">
         <div className="brand">
-          <PrizmaMark size={22} />
-          Prizma
+          <PrizmaTile size={28} />
+          <span className="brand-text">Prizma</span>
         </div>
 
         <button type="button" className="new-chat-btn" onClick={onNew}>
@@ -361,8 +361,12 @@ export function Sidebar({
 
           <div className="account-row">
             <span className="account-id" title={accountLabel}>
-              <UserRound size={14} />
-              {accountLabel}
+              {/* Iniciála místo ikonky panáčka: jeden účet, který má jméno,
+                  vypadá jako účet — obecný piktogram vypadá jako placeholder. */}
+              <span className="account-avatar" aria-hidden="true">
+                {accountLabel.trim().charAt(0).toUpperCase() || <UserRound size={13} />}
+              </span>
+              <span className="account-name">{accountLabel}</span>
             </span>
             <button
               type="button"

@@ -119,36 +119,55 @@ textarea {
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 6px 6px 2px;
-  font-size: 14px;
+  gap: 10px;
+  padding: 4px 4px 8px;
+}
+
+.brand-text {
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
-.brand svg {
+/* Dlaždice se znakem — to, čemu se na telefonu říká ikona aplikace. Neutrální
+   povrch s jemným leskem schválně: pod plnou oranžovou dlaždicí barevný vějíř
+   zanikne, a vějíř je na tom znaku to jediné, co něco říká. */
+.prizma-tile {
+  display: inline-grid;
+  place-items: center;
   flex-shrink: 0;
+  color: var(--text);
+  background: linear-gradient(150deg, var(--sheen), transparent 62%), var(--bg-surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
+/* Jediné tlačítko v sidebaru, které něco *zakládá* — proto jako jediné nese
+   barvu značky. Zbytek panelu je seznam a ovládání, a ty mají mlčet. */
 .new-chat-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
-  padding: 9px 12px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  padding: 10px 15px;
+  background: var(--accent-soft);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
+  color: var(--text);
   text-align: left;
   transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 
+.new-chat-btn svg {
+  color: var(--accent-hover);
+}
+
 .new-chat-btn:hover {
-  background: var(--bg-surface-hover);
-  border-color: var(--border-strong);
+  background: var(--accent-ring);
+  border-color: transparent;
 }
 
 .search-field {
@@ -173,10 +192,10 @@ textarea {
 
 .search-field input {
   width: 100%;
-  padding: 7px 10px 7px 32px;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  padding: 8px 12px 8px 34px;
+  background: var(--bg-app);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
   font-size: 13px;
   transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
 }
@@ -188,7 +207,7 @@ textarea {
 .search-field input:focus {
   outline: none;
   border-color: var(--border-strong);
-  background: var(--bg-surface);
+  background: var(--bg-app);
 }
 
 .conversation-list {
@@ -199,12 +218,13 @@ textarea {
   padding: 0 4px;
 }
 
+/* Bez verzálek a bez proloženého trackingu. „DNES“ na sebe v panelu, kde jsou
+   jinak samé názvy konverzací, upozorňovalo víc než ty konverzace — a přitom
+   je to jenom předěl. */
 .list-group-label {
-  padding: 12px 8px 4px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  padding: 14px 12px 5px;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--text-faint);
 }
 
@@ -212,8 +232,9 @@ textarea {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 7px 6px 7px 10px;
-  border-radius: var(--radius-sm);
+  min-height: 34px;
+  padding: 7px 7px 7px 13px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   font-size: 13.5px;
   color: var(--text-muted);
@@ -256,12 +277,15 @@ textarea {
 }
 
 /* A body hit needs two lines, unlike every other row in this list. */
+/* Dvouřádkový výsledek se do pilulky nevejde — zaoblení se u něj vrací
+   k obdélníku, jinak by rohy ukusovaly druhý řádek. */
 .conversation-item.search-hit {
   flex-direction: column;
   align-items: stretch;
   gap: 2px;
-  padding-top: 8px;
-  padding-bottom: 8px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  border-radius: var(--radius-md);
 }
 
 .search-snippet {
@@ -397,17 +421,35 @@ textarea {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 4px 2px 10px;
+  padding: 4px 4px 2px 6px;
 }
 
 .account-id {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
   min-width: 0;
   flex: 1;
-  font-size: 12px;
-  color: var(--text-faint);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.account-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.account-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -634,10 +676,10 @@ textarea {
 .messages-inner {
   max-width: var(--content-max);
   margin-inline: auto;
-  padding: 28px clamp(16px, 4vw, 32px) 12px;
+  padding: 32px clamp(16px, 4vw, 32px) 16px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 26px;
 }
 
 .message {
@@ -649,12 +691,19 @@ textarea {
   justify-content: flex-end;
 }
 
+/* Rovnoměrné zaoblení bez „ocásku“ v pravém dolním rohu. Ocásek říká „tohle
+   je bublina v chatu“ někomu, kdo to už ví z toho, že je zpráva vpravo — a je
+   to jediný nesymetrický roh na celé obrazovce. */
+/* Bublina má odlišit *tvoji* repliku od odpovědi, která žádnou bublinu nemá.
+   V tmavém režimu to zvládne samotná plocha (`--bg-surface` je světlejší než
+   `--bg-app`), ve světlém je ale bílá na skoro bílé — proto ještě obrys. */
 .message.user .bubble {
-  max-width: 85%;
-  padding: 10px 15px;
-  border-radius: var(--radius-xl);
-  border-bottom-right-radius: var(--radius-sm);
+  max-width: 78%;
+  padding: 11px 17px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
   background: var(--bg-surface);
+  line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -663,8 +712,8 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 7px;
+  margin-bottom: 11px;
   font-size: 11px;
   color: var(--text-faint);
 }
@@ -1506,36 +1555,83 @@ textarea {
 
 /* -------------------------------------------------------- empty state --- */
 
+/* Hero se vystředí ve volném prostoru nad composerem, místo aby se lepil pod
+   topbar. Dřív bylo těžiště obrazovky nahoře a pod ní zbývalo půl výšky
+   prázdna — teď je uvozovka tam, kde se člověk dívá. */
 .empty-state {
+  position: relative;
+  min-height: 100%;
   max-width: var(--content-max);
   margin-inline: auto;
-  padding: clamp(40px, 12vh, 110px) clamp(16px, 4vw, 32px) 20px;
+  padding: 24px clamp(16px, 4vw, 32px) 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
+  /* Aurora přesahuje box schválně a `aurora-drift` ji navíc zvětšuje o 9 %.
+     Bez ořezu z toho v `.messages` vznikl skutečný vodorovný posuvník, který
+     se objevoval a mizel podle fáze animace. `clip` na jedné ose nezakládá
+     scroll kontejner, takže svislé rolování zůstává na `.messages`. */
+  overflow-x: clip;
   animation: fade-in-up var(--dur-slow) var(--ease);
 }
 
+/* Aurora je poziční, takže by nepozicovaný obsah přemalovala. */
+.empty-state > *:not(.empty-aurora) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Ambientní vrstva ze spektrálních tokenů — tatáž paleta, jakou svítí znak
+   i přihlašovací obrazovka. Nízký kontrast a pomalý drift; pod
+   `prefers-reduced-motion` se zastaví na první snímek, který je viditelný,
+   takže se nestane, že by pozadí zmizelo. */
+.empty-aurora {
+  position: absolute;
+  top: 6%;
+  left: 50%;
+  z-index: 0;
+  width: min(760px, 125%);
+  aspect-ratio: 1.5;
+  translate: -50% 0;
+  pointer-events: none;
+  background:
+    radial-gradient(44% 44% at 30% 40%, var(--spectrum-1), transparent 70%),
+    radial-gradient(42% 42% at 66% 34%, var(--spectrum-4), transparent 70%),
+    radial-gradient(46% 46% at 50% 66%, var(--spectrum-5), transparent 72%);
+  filter: blur(52px);
+  opacity: 0.2;
+  animation: aurora-drift 24s var(--ease) infinite alternate;
+}
+
+@keyframes aurora-drift {
+  from {
+    transform: translate3d(-2.5%, 0, 0) scale(1);
+    opacity: 0.16;
+  }
+  to {
+    transform: translate3d(2.5%, 2%, 0) scale(1.09);
+    opacity: 0.26;
+  }
+}
+
 .empty-mark {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  margin: 0 auto 18px;
-  border-radius: 14px;
-  background: var(--accent-soft);
-  color: var(--accent-hover);
+  margin-bottom: 22px;
 }
 
 .empty-state h1 {
-  margin: 0 0 8px;
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+  font-size: clamp(27px, 4.4vw, 42px);
+  font-weight: 500;
+  line-height: 1.14;
+  letter-spacing: -0.03em;
 }
 
 .empty-state p {
-  margin: 0 0 26px;
+  margin: 0 0 30px;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 14.5px;
 }
 
 .suggestions {
@@ -1543,6 +1639,7 @@ textarea {
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
+  width: 100%;
 }
 
 .suggestion {
@@ -1668,12 +1765,14 @@ textarea {
 .composer {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 10px 8px 14px;
+  gap: 8px;
+  padding: 13px 12px 10px 18px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  /* Větší než --radius-xl: pole na psaní má být to nejměkčí na obrazovce,
+     a při jednom řádku se tvarem blíží pilulce. */
+  border-radius: 26px;
   background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 

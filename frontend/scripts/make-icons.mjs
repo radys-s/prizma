@@ -9,6 +9,12 @@
  * Why PNG at all, when the tab favicon is an inline SVG: iOS ignores SVG for
  * `apple-touch-icon`, and Android's install prompt wants a raster at 192 and
  * 512. A home screen is exactly the surface that will not take the SVG.
+ *
+ * **The geometry below is a hand-kept copy** of `src/components/Logo.tsx`,
+ * which is the source of truth. The third copy lives in `index.html` as the
+ * inline favicon. Sharing one source would mean either a build step or a
+ * headless browser in the pipeline; three short paths are the cheaper trade,
+ * as long as a change to the mark touches all three.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -19,64 +25,67 @@ import sharp from "sharp";
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "..", "public");
 
-const BG = "#1f1e1d";
-const BEAM = "#f5f4ef";
-const GLASS = "#8a867c";
-const FAN = ["#f2c879", "#e59356", "#d9635a", "#a86fc4", "#5d9fd6"];
+// Dark-theme tokens from `src/styles/tokens.css`. An icon on a home screen has
+// no way to react to light mode, so it decides once.
+const TILE = "#1f1e1d"; // --bg-sidebar, same as theme_color in the manifest
+const INK = "#f0eee6"; // --text: the beam and the glass
+const SPECTRUM = ["#5d9fd6", "#a86fc4", "#d9635a", "#e59356", "#f2c879"];
+const STOPS = [0, 0.27, 0.52, 0.76, 1];
+
+const PRISM = "M20 6.6 33.4 30.4H6.6Z";
+const BEAM = "M2.4 24H18L37 11";
 
 /**
- * The mark on a 40x40 grid, scaled and centred into a `size` square.
+ * One icon as SVG source.
  *
- * `inset` is the fraction of the square left empty on each side. Android masks
- * a maskable icon down to a circle inscribed in the middle 80%, so anything
- * outside that can be cropped — hence a much larger inset for that one.
+ * `markRatio` is the share of the edge the mark itself takes. `cornerRatio` 0
+ * means a full square — that is what iOS wants (it rounds the corner itself
+ * and fills transparency with black) and what a maskable icon wants, since
+ * there the system decides the shape.
  */
-function markSvg(size, inset) {
-  const box = size * (1 - 2 * inset);
-  const scale = box / 40;
-  const offset = size * inset;
-  // The fan spreads to x=40 and the beam starts at x=1, so the mark fills the
-  // grid horizontally; vertically it sits between y=6.5 and y=31.5 and needs
-  // nudging down to look centred.
-  const dy = (40 - (6.5 + 31.5)) / 2;
-  const stroke = 2.4;
-
-  const fan = FAN.map((color, i) => {
-    const ends = [
-      [40, 10.5],
-      [40, 15.5],
-      [40, 20.5],
-      [40, 25.5],
-      [40, 30.5],
-    ];
-    const [x, y] = ends[i];
-    return `<path d="M26.6 20.5 ${x} ${y}" stroke="${color}" stroke-width="${stroke}"/>`;
-  }).join("");
+function iconSvg(size, markRatio, cornerRatio) {
+  const mark = size * markRatio;
+  const scale = mark / 40;
+  const origin = (size - mark) / 2;
+  const stops = SPECTRUM.map(
+    (color, i) => `<stop offset="${STOPS[i]}" stop-color="${color}"/>`,
+  ).join("");
 
   return Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
-      `<rect width="${size}" height="${size}" fill="${BG}"/>` +
-      `<g transform="translate(${offset} ${offset + dy * scale}) scale(${scale})" fill="none" stroke-linecap="round">` +
-      `<path d="M1 19.5H13" stroke="${BEAM}" stroke-width="${stroke}"/>` +
-      `<path d="M20 6.5 33.5 31.5H6.5Z" stroke="${GLASS}" stroke-width="${stroke}" stroke-linejoin="round"/>` +
-      fan +
-      `</g></svg>`
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" ` +
+      `viewBox="0 0 ${size} ${size}" fill="none">` +
+      `<defs><linearGradient id="s" x1="4" y1="34" x2="36" y2="6" ` +
+      `gradientUnits="userSpaceOnUse">${stops}</linearGradient></defs>` +
+      `<rect width="${size}" height="${size}" rx="${size * cornerRatio}" fill="${TILE}"/>` +
+      `<g transform="translate(${origin} ${origin}) scale(${scale})">` +
+      // The glass sits at the bottom; the beam goes under the frame on purpose,
+      // so the coloured outline — the thing the mark is recognised by — stays
+      // unbroken, and the light reads as passing through rather than stuck on.
+      `<path d="${PRISM}" fill="${INK}" fill-opacity="0.12"/>` +
+      `<path d="${BEAM}" stroke="${INK}" stroke-width="3.3" ` +
+      `stroke-linecap="round" stroke-linejoin="round"/>` +
+      `<path d="${PRISM}" stroke="url(#s)" stroke-width="4" stroke-linejoin="round"/>` +
+      `</g></svg>`,
   );
 }
 
-const targets = [
-  { file: "icon-192.png", size: 192, inset: 0.14 },
-  { file: "icon-512.png", size: 512, inset: 0.14 },
-  // 26% inset keeps every stroke inside Android's circular safe zone.
-  { file: "icon-maskable-512.png", size: 512, inset: 0.26 },
-  // iOS does not mask beyond rounding the corners, so it can run tighter.
-  { file: "apple-touch-icon.png", size: 180, inset: 0.12 },
+const ICONS = [
+  // [file, size, mark share, corner rounding]
+  ["icon-192.png", 192, 0.62, 0.22],
+  ["icon-512.png", 512, 0.62, 0.22],
+  // iOS rounds the corner itself and backs transparent pixels with black.
+  ["apple-touch-icon.png", 180, 0.62, 0],
+  // Maskable: the system may crop up to 20% of the edge, so the mark has to fit
+  // the safe zone — hence noticeably smaller than the rest.
+  ["icon-maskable-512.png", 512, 0.46, 0],
 ];
 
 await mkdir(outDir, { recursive: true });
 
-for (const { file, size, inset } of targets) {
-  const png = await sharp(markSvg(size, inset)).png({ compressionLevel: 9 }).toBuffer();
-  await writeFile(join(outDir, file), png);
-  console.log(`${file}  ${size}x${size}  ${(png.length / 1024).toFixed(1)} kB`);
+for (const [name, size, markRatio, cornerRatio] of ICONS) {
+  const png = await sharp(iconSvg(size, markRatio, cornerRatio))
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+  await writeFile(join(outDir, name), png);
+  console.log(`${name} (${size}x${size}, ${png.length} B)`);
 }

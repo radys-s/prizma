@@ -750,6 +750,10 @@ bez adresního řádku. V prohlížeči na telefonu: *Přidat na plochu*.
 - `manifest.webmanifest`, ikony 192/512 + maskable 512 + `apple-touch-icon` 180.
   Generuje je `npm run icons` z `frontend/scripts/make-icons.mjs` (`sharp`) —
   výstup je commitnutý, aby build nezávisel na tom, že `sharp` půjde nainstalovat.
+  Zdroj pravdy pro znak je `frontend/src/components/Logo.tsx`; geometrii z něj
+  ručně kopíruje jednak tenhle skript, jednak inline favicona v `index.html`.
+  Když se znak změní, musí se sáhnout na všechna tři místa — sdílený zdroj by
+  znamenal build krok navíc nebo prohlížeč v pipeline.
 - Service worker (`frontend/public/sw.js`, ručně psaný, bez `vite-plugin-pwa`).
   Hashované `/assets/*` cache-first, dokument network-first s offline fallbackem.
   **`/api/*` neodchytává vůbec** — zastaralý seznam konverzací by mátl, ale
