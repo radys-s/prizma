@@ -40,6 +40,35 @@ LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
+def _is_own_origin(request: Request, origin: str) -> bool:
+    """Whether `origin` is this very server, as the browser addressed it.
+
+    The static allowlist cannot cover the case that matters most in practice:
+    `spa.py` mounts the built frontend into this same app, so when Prizma is
+    started by `aplikace.exe` the page lives on `http://127.0.0.1:8000` — a
+    port picked at run time from a free range. Nothing can write that down in
+    advance, and without this check the first `POST /api/auth/login` from the
+    launcher answered "Nepovolený Origin", which reads exactly like a wrong
+    passcode. It was the one way of opening the app that could not log in.
+
+    Comparing against the request's own `Host` gives nothing away. A page on
+    another site cannot make the two agree: the browser fills `Origin` from the
+    page it is running and `Host` from the URL being fetched, so a cross-site
+    request always arrives with them disagreeing. `Host` is not free-form
+    either — `HardeningMiddleware` has already checked it against the hostname
+    allowlist before any of this runs.
+
+    Both schemes are accepted because the scheme the browser used is not
+    visible here: behind Render's proxy the app itself speaks plain HTTP. The
+    looseness costs nothing, since the host still has to be ours, and ours is
+    only reachable over TLS.
+    """
+    host = request.headers.get("host")
+    if not host:
+        return False
+    return origin in {f"http://{host}", f"https://{host}"}
+
+
 def enforce_origin(request: Request) -> None:
     """Layers 1 and 2. Raises HTTPException, never returns a value."""
     allowed = settings.allowed_origins()
@@ -49,12 +78,12 @@ def enforce_origin(request: Request) -> None:
         client_host = request.client.host if request.client else None
         if client_host not in LOOPBACK_HOSTS:
             raise HTTPException(status_code=403, detail="Povoleno jen z tohoto počítače.")
-        if origin is not None and origin not in allowed:
+        if origin is not None and origin not in allowed and not _is_own_origin(request, origin):
             raise HTTPException(status_code=403, detail="Nepovolený Origin.")
         return
 
     if origin is not None:
-        if origin not in allowed:
+        if origin not in allowed and not _is_own_origin(request, origin):
             raise HTTPException(status_code=403, detail="Nepovolený Origin.")
         return
 

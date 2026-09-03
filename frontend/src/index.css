@@ -2318,46 +2318,95 @@ textarea {
   gap: 10px;
 }
 
+/* ---------------------------------------------------- karty providerů ---- */
+
+/* Osmnáct těchhle karet leží pod sebou v jednom scrollu, takže je karta
+   stavěná hlavně na to, aby byla *tichá*: jedna vlasová linka, jeden povrch a
+   barva vyhrazená dvěma věcem, které stojí za všimnutí — jestli je uložený
+   klíč a jestli provider chce kartu. Původní karta rozdávala barvu všude
+   (zelený rám kolem celého boxu, zelená pilulka u jména, zelený řádek textu
+   v patičce — všechno říkalo totéž) a výsledkem byla zeď, na které oko nemělo
+   kde přistát. */
 .provider-card {
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
-  padding: 13px 14px;
+  /* Bez spodního paddingu: řádek s akcemi je patička a nese si vlastní. */
+  padding: 14px 16px 0;
   transition: border-color var(--dur) var(--ease);
 }
 
-.provider-card.configured {
-  border-color: var(--success-ring);
+.provider-card:hover {
+  border-color: var(--border-strong);
 }
 
 .provider-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
+/* Celý signál „nastaveno“, v šesti pixelech. */
+.provider-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-faint);
+  opacity: 0.45;
+  transition: background-color var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+
+.provider-card.configured .provider-dot {
+  background: var(--success);
+  opacity: 1;
+}
+
 .provider-name {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Zůstává tlumený v obou stavech. Barvu nese tečka; kdyby ji nesl i text,
+   slovo by jen soupeřilo se jménem providera. */
+.provider-state {
+  font-size: 11.5px;
+  color: var(--text-faint);
 }
 
 .provider-head .spacer {
   flex: 1;
 }
 
-.provider-meta {
-  margin: 7px 0 0;
-  font-size: 12px;
-  color: var(--text-muted);
+/* Jeden slug na dlaždici místo jedné dlouhé mono řádky slepené tečkami. Táž
+   informace, ale modely jdou spočítat, aniž by se musely číst. */
+.provider-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.provider-models {
-  margin: 6px 0 0;
+.model-pill {
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-code);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10.5px;
+  line-height: 1.65;
   color: var(--text-faint);
   overflow-wrap: anywhere;
+}
+
+.provider-meta {
+  margin: 9px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
 }
 
 .provider-tags {
@@ -2369,9 +2418,58 @@ textarea {
 
 .key-row {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-top: 12px;
   flex-wrap: wrap;
+}
+
+/* Uvnitř karty se z řádku stává patička: vlasová linka vytažená k oběma
+   okrajům odděluje „co ten provider je“ od „co se s tím dá dělat“. */
+.provider-card .key-row {
+  margin: 13px -16px 0;
+  padding: 11px 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* `.btn` se vyplňuje barvou --bg-surface, což je přesně pozadí karty — na
+   kartě proto tlačítka vypadají jako holý text namačkaný k sobě. V patičce
+   dostanou obrys místo výplně. */
+.provider-card .key-row .btn {
+  padding: 6px 11px;
+  font-size: 12.5px;
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.provider-card .key-row .btn:hover:not(:disabled) {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.provider-card .key-row .btn-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-fg);
+}
+
+.provider-card .key-row .btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: transparent;
+  color: var(--accent-fg);
+}
+
+.provider-card .key-row .btn-danger {
+  border-color: transparent;
+  color: var(--danger);
+}
+
+.provider-card .key-row .btn-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: transparent;
+  color: var(--danger);
 }
 
 .key-input {
@@ -2384,12 +2482,12 @@ textarea {
 
 .key-input input {
   width: 100%;
-  padding: 8px 34px 8px 11px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
+  padding: 7px 34px 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   background: var(--bg-app);
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: 12px;
   transition: border-color var(--dur) var(--ease);
 }
 
@@ -2405,19 +2503,20 @@ textarea {
   height: 26px;
 }
 
-/* Replaces the input once a key is stored: states the fact, offers no field
-   to retype something the app already has. */
+/* Nahrazuje políčko, jakmile je klíč uložený: konstatuje fakt a nenabízí
+   pole na přepsání něčeho, co appka už má. Text je tlumený, zelené zůstalo
+   jen zaškrtnutí — zelená věta v patičce opakovala tečku u jména. */
 .key-stored {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 8px 0;
-  color: var(--success);
-  font-size: 12.5px;
+  color: var(--text-faint);
+  font-size: 12px;
 }
 
 .key-stored svg {
   flex-shrink: 0;
+  color: var(--success);
 }
 
 .provider-result {
@@ -2428,6 +2527,17 @@ textarea {
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* Na kartě výsledek visí pod patičkou, která už mezeru nad sebou udělala —
+   odsazuje se tedy zespoda, jinak by dosedl na spodní hranu karty. */
+.provider-card .provider-result {
+  margin: 0 0 8px;
+}
+
+.provider-card .provider-result:last-child {
+  margin-bottom: 14px;
 }
 
 .provider-result svg {
