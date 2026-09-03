@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { randomTip } from "../lib/tips";
 import type { SearchMode } from "../lib/types";
-import { PrizmaMark } from "./Logo";
+import { PrizmaTile } from "./Logo";
 
 /**
  * Three prompts that demonstrate the product rather than fill the space.
@@ -50,9 +50,12 @@ export function EmptyState({ onPick }: Props) {
 
   return (
     <div className="empty-state">
-      <div className="empty-mark">
-        <PrizmaMark size={44} />
-      </div>
+      {/* Ambientní vrstva pod nadpisem. Čistě dekorativní, proto aria-hidden
+          a nulový vliv na layout — leží v absolutní pozici za obsahem. */}
+      <div className="empty-aurora" aria-hidden="true" />
+
+      <PrizmaTile size={52} className="empty-mark" />
+
       <h1>Na co se dnes zeptáme?</h1>
       <p>Router rozebere zprávu a pošle ji na nejlepší dostupný model.</p>
 
