@@ -370,8 +370,9 @@ export function ProvidersModal({
                 className={`provider-card${group.configured ? " configured" : ""}`}
               >
                 <div className="provider-head">
+                  <span className="provider-dot" aria-hidden="true" />
                   <span className="provider-name">{group.name}</span>
-                  <span className={`chip${group.configured ? " ok" : ""}`}>
+                  <span className="provider-state">
                     {group.configured ? "Nastaveno" : "Chybí klíč"}
                   </span>
                   <span className="spacer" />
@@ -380,7 +381,14 @@ export function ProvidersModal({
                   </span>
                 </div>
 
-                <p className="provider-models">{group.models.join(" · ")}</p>
+                <ul className="provider-models">
+                  {group.models.map((model) => (
+                    <li key={model} className="model-pill">
+                      {model}
+                    </li>
+                  ))}
+                </ul>
+
                 {group.notes.length > 0 && <p className="provider-meta">{group.notes.join(" ")}</p>}
 
                 <div className="provider-tags">
