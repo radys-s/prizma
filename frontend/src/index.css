@@ -142,22 +142,25 @@ textarea {
   box-shadow: var(--shadow-sm);
 }
 
-/* Jediné tlačítko v sidebaru, které něco *zakládá* — proto jako jediné nese
-   barvu značky. Zbytek panelu je seznam a ovládání, a ty mají mlčet. */
+/* Vyvýšená pilulka, ne barevná plocha. `--accent-soft` je 14% oranžová a na
+   tmavém panelu z ní vyjde blátivě hnědá skvrna — vypadá to jako flek, ne
+   jako tlačítko. Barvu značky proto nese jen `+`; tvar a světlejší povrch
+   stačí na to, aby šlo o nejvýraznější prvek panelu. */
 .new-chat-btn {
   display: flex;
   align-items: center;
   gap: 9px;
   width: 100%;
   padding: 10px 15px;
-  background: var(--accent-soft);
-  border: 1px solid transparent;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   cursor: pointer;
   font-size: 13.5px;
   font-weight: 500;
   color: var(--text);
   text-align: left;
+  box-shadow: var(--shadow-sm);
   transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 
@@ -166,8 +169,8 @@ textarea {
 }
 
 .new-chat-btn:hover {
-  background: var(--accent-ring);
-  border-color: transparent;
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
 }
 
 .search-field {
@@ -249,6 +252,7 @@ textarea {
 .conversation-item.active {
   background: var(--bg-surface-hover);
   color: var(--text);
+  font-weight: 500;
 }
 
 .conversation-title {
@@ -1593,104 +1597,157 @@ textarea {
   left: 50%;
   z-index: 0;
   width: min(760px, 125%);
-  aspect-ratio: 1.5;
+  aspect-ratio: 2.2;
   translate: -50% 0;
   pointer-events: none;
+  /* Široký nízký pás, ne kulatá skvrna. Kruh uprostřed obrazovky vypadal jako
+     šmouha na skle; pás rozložený vodorovně za nadpisem čte jako světlo
+     rozložené hranolem, což je přesně ten obrázek, o který jde. */
   background:
-    radial-gradient(44% 44% at 30% 40%, var(--spectrum-1), transparent 70%),
-    radial-gradient(42% 42% at 66% 34%, var(--spectrum-4), transparent 70%),
-    radial-gradient(46% 46% at 50% 66%, var(--spectrum-5), transparent 72%);
-  filter: blur(52px);
-  opacity: 0.2;
+    radial-gradient(40% 54% at 20% 52%, var(--spectrum-5), transparent 72%),
+    radial-gradient(38% 52% at 50% 42%, var(--spectrum-4), transparent 72%),
+    radial-gradient(40% 54% at 80% 54%, var(--spectrum-2), transparent 72%);
+  filter: blur(46px);
+  opacity: 0.24;
   animation: aurora-drift 24s var(--ease) infinite alternate;
 }
 
 @keyframes aurora-drift {
   from {
     transform: translate3d(-2.5%, 0, 0) scale(1);
-    opacity: 0.16;
+    opacity: 0.19;
   }
   to {
-    transform: translate3d(2.5%, 2%, 0) scale(1.09);
-    opacity: 0.26;
+    transform: translate3d(2.5%, 1.5%, 0) scale(1.07);
+    opacity: 0.3;
   }
 }
 
-.empty-mark {
-  margin-bottom: 22px;
+/* Nadpis nese spektrum — tentýž přechod, jakým svítí rám hranolu ve znaku
+   i podnadpis na přihlašovací obrazovce. Je to jediné místo v appce, kde se
+   barva používá dekorativně, a proto to funguje: kdyby spektrum bylo všude,
+   nebylo by nikde.
+
+   `--spectrum-*` jsou ve světlém režimu schválně tmavší, takže přechod projde
+   kontrastem i na skoro bílé. Bez `background-clip: text` by ale text zmizel
+   úplně, proto plná barva jako základ a přechod až uvnitř `@supports`. */
+.empty-title {
+  margin: 0 0 10px;
+  font-size: clamp(28px, 4.6vw, 44px);
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  color: var(--text);
 }
 
-.empty-state h1 {
-  margin: 0 0 10px;
-  font-size: clamp(27px, 4.4vw, 42px);
-  font-weight: 500;
-  line-height: 1.14;
-  letter-spacing: -0.03em;
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .empty-title {
+    background: linear-gradient(
+      96deg,
+      var(--spectrum-5),
+      var(--spectrum-4) 27%,
+      var(--spectrum-3) 52%,
+      var(--spectrum-2) 76%,
+      var(--spectrum-1)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
 }
 
 .empty-state p {
-  margin: 0 0 30px;
+  margin: 0 0 26px;
   color: var(--text-muted);
   font-size: 14.5px;
 }
 
+/* Mřížka stejně širokých karet, ne řádek vystředěných pilulek. Tři pilulky
+   s různě dlouhým textem se vystředily každá jinak a schodovitý útvar, který
+   z toho vznikl, vypadal jako nedopatření. Mřížka dá kartám jednu levou
+   hranu a jednu výšku, takže se čtou jako nabídka. */
 .suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
   width: 100%;
 }
 
 .suggestion {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  padding: 9px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 124px;
+  padding: 14px 14px 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   cursor: pointer;
-  font-size: 13px;
-  color: var(--text-muted);
+  text-align: left;
   transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease),
-    color var(--dur) var(--ease), transform var(--dur) var(--ease);
+    transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 
 .suggestion:hover {
   background: var(--bg-surface-hover);
   border-color: var(--border-strong);
-  color: var(--text);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
+/* Každá karta má vlastní barvu ze spektra (`--hue` nastavuje komponenta).
+   Tři různé barvy vedle sebe jsou produkt v jednom obrázku: jeden dotaz,
+   několik cest ven. `color-mix` má fallback řádek nad sebou — starší
+   prohlížeč deklaraci zahodí a zůstane neutrální plocha. */
 .suggestion-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
-  color: var(--accent-hover);
+  border-radius: 10px;
+  color: var(--hue, var(--accent-hover));
+  background: var(--bg-code);
+  background: color-mix(in srgb, var(--hue, var(--accent)) 15%, transparent);
 }
 
-.suggestion-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.suggestion-title {
+  flex: 1;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--text);
 }
 
 /* The mode the chip will actually switch to — so "deep research" on a chip is
-   a promise the click keeps, not a description of the prompt. */
+   a promise the click keeps, not a description of the prompt. Neutrální
+   schválně: barvu na kartě už nese ikona a dvě barvy vedle sebe by z karty
+   udělaly cedulku. */
 .suggestion-tag {
-  flex-shrink: 0;
-  padding: 1px 7px;
+  padding: 2px 8px;
   border-radius: var(--radius-pill);
-  background: var(--accent-soft);
-  color: var(--accent-hover);
+  background: var(--bg-code);
+  color: var(--text-faint);
   font-size: 10.5px;
   font-weight: 500;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
+  .suggestions {
+    grid-template-columns: 1fr;
+  }
+
   .suggestion {
-    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 11px;
+    min-height: 0;
+    padding: 11px 13px;
+  }
+
+  .suggestion-title {
+    flex: 1;
+    min-width: 0;
   }
 }
 
@@ -1705,9 +1762,13 @@ textarea {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  max-width: 520px;
-  margin-top: 26px;
-  padding: 0 4px;
+  width: 100%;
+  max-width: 560px;
+  margin-top: 24px;
+  /* Vlasová linka odděluje tip od karet. Bez ní splýval s nabídkou a tři
+     karty plus odstavec pod nimi četly jako jeden blok. */
+  padding: 16px 4px 0;
+  border-top: 1px solid var(--border);
   text-align: left;
 }
 
@@ -1721,7 +1782,7 @@ textarea {
   margin: 0;
   font-size: 12.5px;
   line-height: 1.55;
-  color: var(--text-muted);
+  color: var(--text-faint);
 }
 
 /* Only shows itself on hover over the whole tip: a permanently visible refresh
@@ -1763,6 +1824,7 @@ textarea {
    same bordered box makes them read as part of composing the message rather
    than as app chrome that happens to live nearby. */
 .composer {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1776,9 +1838,43 @@ textarea {
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 
+/* Spektrální obrys místo oranžového prstence. Je to jediná animovaná barva
+   v celé appce a nese přesně to, co se v tu chvíli děje: do pole vstupuje
+   jeden text a hranol z něj rozdělí cestu k několika modelům.
+
+   Technicky je to gradient v pseudoprvku, kterému maska vykrojí střed —
+   `border-image` neumí zaoblené rohy a `box-shadow` neumí přechod. Element je
+   `pointer-events: none`, takže i když se překrývá s obsahem, nic neblokuje. */
+.composer::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    104deg,
+    var(--spectrum-5),
+    var(--spectrum-4) 28%,
+    var(--spectrum-3) 54%,
+    var(--spectrum-2) 76%,
+    var(--spectrum-1)
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
+}
+
 .composer:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+  border-color: transparent;
+  box-shadow: var(--shadow-lg);
+}
+
+.composer:focus-within::before {
+  opacity: 1;
 }
 
 .composer textarea {
@@ -1888,16 +1984,19 @@ textarea {
   min-width: 0;
 }
 
+/* Zapuštěná pilulka, ne holý text. Tři průhledné šedé popisky pod polem na
+   psaní vypadaly jako nedodělaný debug výpis; jakmile mají vlastní plochu,
+   čtou se jako ovládání, kterým doopravdy jsou. */
 .picker-trigger {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   max-width: 100%;
   height: 30px;
-  padding: 0 8px;
+  padding: 0 10px;
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
-  background: transparent;
+  background: var(--bg-code);
   color: var(--text-muted);
   font-size: 12.5px;
   cursor: pointer;
@@ -2047,8 +2146,11 @@ textarea {
     align-items: flex-end;
   }
 
+  /* Nerostou: třetí pilulka, která zbyde sama na druhém řádku, by se jinak
+     roztáhla přes celou šířku a vedle dvou půlek by vypadala jako omyl.
+     Půlka pod půlkou drží mřížku. */
   .picker {
-    flex: 1 1 calc(50% - 3px);
+    flex: 0 1 calc(50% - 3px);
   }
 
   .picker-trigger {

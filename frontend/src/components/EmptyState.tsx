@@ -1,9 +1,8 @@
 import { Code, Globe, Lightbulb, RefreshCw, Wand2 } from "lucide-react";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 
 import { randomTip } from "../lib/tips";
 import type { SearchMode } from "../lib/types";
-import { PrizmaTile } from "./Logo";
 
 /**
  * Three prompts that demonstrate the product rather than fill the space.
@@ -12,30 +11,46 @@ import { PrizmaTile } from "./Logo";
  * first thing a new user sees is the router doing the thing the app is for.
  * `search` is applied to the globe picker when the chip is used, which is why
  * the chip can promise "deep research" and be telling the truth.
+ *
+ * `title` and `prompt` are split on purpose: the card shows a short label so
+ * three of them line up as equal tiles, but the click sends the full sentence,
+ * which is what actually makes a decent prompt. Showing the whole sentence
+ * made the three cards different heights and turned the row into confetti.
+ *
+ * `hue` picks a stop out of the prism spectrum. Three different colours across
+ * the row are the product in one image: one prompt, several paths out.
  */
 const SUGGESTIONS: {
   icon: typeof Code;
-  label: string;
+  title: string;
+  prompt: string;
   tag: string;
   search: SearchMode;
+  hue: string;
 }[] = [
   {
     icon: Globe,
-    label: "Porovnej Postgres a SQLite pro lokální desktopovou aplikaci",
+    title: "Porovnej Postgres a SQLite",
+    prompt: "Porovnej Postgres a SQLite pro lokální desktopovou aplikaci",
     tag: "deep research",
     search: "deep",
+    hue: "var(--spectrum-5)",
   },
   {
     icon: Code,
-    label: "Napiš Python funkci, která z CSV udělá měsíční souhrn",
+    title: "Měsíční souhrn z CSV",
+    prompt: "Napiš Python funkci, která z CSV udělá měsíční souhrn",
     tag: "kód",
     search: "off",
+    hue: "var(--spectrum-4)",
   },
   {
     icon: Wand2,
-    label: "Vymysli tři názvy pro aplikaci na sledování běhu",
+    title: "Názvy pro appku na běhání",
+    prompt: "Vymysli tři názvy pro aplikaci na sledování běhu",
     tag: "kreativní",
     search: "off",
+    hue: "var(--spectrum-2)",
   },
 ];
 
@@ -54,21 +69,25 @@ export function EmptyState({ onPick }: Props) {
           a nulový vliv na layout — leží v absolutní pozici za obsahem. */}
       <div className="empty-aurora" aria-hidden="true" />
 
-      <PrizmaTile size={52} className="empty-mark" />
-
-      <h1>Na co se dnes zeptáme?</h1>
+      {/* Bez dlaždice se znakem. Ikona appky uvnitř appky nic neříká — člověk
+          ví, co spustil. Identitu nese nadpis, který je obarvený tímtéž
+          spektrem jako znak i přihlašovací obrazovka. */}
+      <h1 className="empty-title">Na co se dnes zeptáme?</h1>
       <p>Router rozebere zprávu a pošle ji na nejlepší dostupný model.</p>
 
       <div className="suggestions">
-        {SUGGESTIONS.map(({ icon: Icon, label, tag, search }) => (
+        {SUGGESTIONS.map(({ icon: Icon, title, prompt, tag, search, hue }) => (
           <button
-            key={label}
+            key={title}
             type="button"
             className="suggestion"
-            onClick={() => onPick(label, search)}
+            style={{ "--hue": hue } as CSSProperties}
+            onClick={() => onPick(prompt, search)}
           >
-            <Icon size={14} className="suggestion-icon" />
-            <span className="suggestion-label">{label}</span>
+            <span className="suggestion-icon" aria-hidden="true">
+              <Icon size={16} />
+            </span>
+            <span className="suggestion-title">{title}</span>
             <span className="suggestion-tag">{tag}</span>
           </button>
         ))}
