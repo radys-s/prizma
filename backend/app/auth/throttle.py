@@ -40,6 +40,21 @@ BACKOFF_SECONDS = (5, 30, 300, 1800, 7200)
 # user's own failures land in it too, so it starts backing off later.
 GLOBAL_FREE_ATTEMPTS = 12
 
+# How long a bucket must stay quiet before its counter is forgiven.
+#
+# Without this the global counter only ever grows: `clear_failures` refuses to
+# touch it (correctly — a valid sign-in must not be a reset button for someone
+# else's guessing), so one wrong guess every two hours pins the 7200 s ceiling
+# forever and locks Tomáš out of his own app permanently. A denial of service
+# anyone could trigger with a cron job is not a defence.
+#
+# The windows are the tradeoff. Six quiet hours buy an attacker 12 fresh
+# attempts, i.e. 48 a day: still ~200 days of uninterrupted guessing at a
+# four-digit code, and the real answer to *that* is to turn
+# `PASSCODE_LOGIN_ENABLED` off once a real identity is linked.
+QUIET_RESET_SECONDS = 3600
+GLOBAL_QUIET_RESET_SECONDS = 6 * 3600
+
 
 def _aware(value: datetime | None) -> datetime | None:
     """SQLite hands back naive datetimes; Postgres does not."""
@@ -73,14 +88,22 @@ def lockout_remaining(session: Session, ip: str) -> int:
 
 def record_failure(session: Session, ip: str) -> int:
     """Count one failed attempt in both buckets. -> seconds now locked out."""
-    for scope, free in ((ip, FREE_ATTEMPTS), (GLOBAL_SCOPE, GLOBAL_FREE_ATTEMPTS)):
+    now = utcnow()
+    for scope, free, quiet in (
+        (ip, FREE_ATTEMPTS, QUIET_RESET_SECONDS),
+        (GLOBAL_SCOPE, GLOBAL_FREE_ATTEMPTS, GLOBAL_QUIET_RESET_SECONDS),
+    ):
         row = _row(session, scope)
+        last = _aware(row.updated_at)
+        if last is not None and (now - last).total_seconds() >= quiet:
+            row.failures = 0
+            row.locked_until = None
         row.failures += 1
-        row.updated_at = utcnow()
+        row.updated_at = now
         over = row.failures - free
         if over > 0:
             wait = BACKOFF_SECONDS[min(over - 1, len(BACKOFF_SECONDS) - 1)]
-            row.locked_until = utcnow() + timedelta(seconds=wait)
+            row.locked_until = now + timedelta(seconds=wait)
         session.add(row)
     session.commit()
     return lockout_remaining(session, ip)
@@ -91,7 +114,8 @@ def clear_failures(session: Session, ip: str) -> None:
 
     Clearing global on success would hand an attacker a reset button: anyone
     who knows *any* valid way in could wipe the counter that is bounding their
-    guesses at another. The global bucket is drained by time instead.
+    guesses at another. The global bucket is drained by time instead — see
+    `GLOBAL_QUIET_RESET_SECONDS`.
     """
     row = session.get(LoginAttempt, ip)
     if row is not None:

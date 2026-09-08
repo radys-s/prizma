@@ -68,6 +68,17 @@ services:
         sync: false
       - key: GITHUB_CLIENT_SECRET
         sync: false
+      # `config.py` reads these two providers as well. Left commented rather
+      # than omitted: an unset pair simply hides that button, and a variable
+      # the code reads but the deploy file never mentions is how drift starts.
+      # - key: MICROSOFT_CLIENT_ID
+      #   sync: false
+      # - key: MICROSOFT_CLIENT_SECRET
+      #   sync: false
+      # - key: APPLE_CLIENT_ID
+      #   sync: false
+      # - key: APPLE_CLIENT_SECRET
+      #   sync: false
 
       # ---------------------------------------------------------------- mail
       - key: RESEND_API_KEY

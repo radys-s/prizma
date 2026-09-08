@@ -146,23 +146,48 @@ def redirect_uri(provider_id: str) -> str:
 
 # --------------------------------------------------------- pending handshakes
 
-# state -> (provider_id, pkce_verifier, expires_at). In memory: a login
-# handshake that doesn't survive a restart is a non-issue.
-_pending: dict[str, tuple[str, str, float]] = {}
+# state -> (provider_id, pkce_verifier, expires_at, link_user_id). In memory: a
+# login handshake that doesn't survive a restart is a non-issue.
+#
+# `state` alone is *not* enough to prove the callback belongs to the browser
+# that started the flow. The callback is a GET, so it passes the Origin check's
+# safe-method branch and arrives with the victim's SameSite=Lax session cookie
+# attached: an attacker who starts a flow, keeps their own `state`, and gets the
+# signed-in owner to load the callback URL would link *their* provider account
+# to the owner's account — and inherit every stored API key. The `ma_oauth`
+# cookie set at /start closes that: an attacker cannot write a cookie on this
+# origin, so a callback without the matching cookie is refused.
+STATE_COOKIE = "ma_oauth"
+
+# A handshake is ~200 bytes and expires in STATE_TTL_SECONDS, but the /start
+# route is reachable without a session, so the dict needs a ceiling of its own.
+_MAX_PENDING = 256
+
+_pending: dict[str, tuple[str, str, float, int | None]] = {}
 
 
 def _prune() -> None:
     now = time.monotonic()
-    for state in [s for s, (_, _, exp) in _pending.items() if exp <= now]:
+    for state in [s for s, (_, _, exp, _uid) in _pending.items() if exp <= now]:
         del _pending[state]
+    # Still full of live handshakes? Drop the oldest — dicts keep insertion
+    # order, so the first key is the least recent.
+    while len(_pending) >= _MAX_PENDING:
+        del _pending[next(iter(_pending))]
 
 
 def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def begin(provider_id: str) -> str:
-    """Returns the provider's authorization URL to send the browser to."""
+def begin(provider_id: str, link_user_id: int | None = None) -> tuple[str, str]:
+    """Returns `(authorization_url, state)` to send the browser to.
+
+    `state` is handed back so the route can also store it in a cookie; see
+    `STATE_COOKIE`. `link_user_id` records who was signed in when the flow
+    started, so a handshake begun while signed out cannot be finished as a
+    link onto somebody's account.
+    """
     provider = OIDC_PROVIDERS.get(provider_id)
     if provider is None:
         raise OAuthError(f"Neznámý provider: {provider_id}")
@@ -176,7 +201,12 @@ def begin(provider_id: str) -> str:
     state = secrets.token_urlsafe(24)
     verifier = secrets.token_urlsafe(48)
     challenge = _b64url(hashlib.sha256(verifier.encode("ascii")).digest())
-    _pending[state] = (provider_id, verifier, time.monotonic() + STATE_TTL_SECONDS)
+    _pending[state] = (
+        provider_id,
+        verifier,
+        time.monotonic() + STATE_TTL_SECONDS,
+        link_user_id,
+    )
 
     params = {
         "client_id": client_id,
@@ -188,17 +218,20 @@ def begin(provider_id: str) -> str:
         "code_challenge_method": "S256",
         **dict(provider.extra_authorize_params),
     }
-    return str(httpx.URL(provider.authorize_url, params=params))
+    return str(httpx.URL(provider.authorize_url, params=params)), state
 
 
-def take_pending(state: str) -> tuple[str, str]:
-    """Consumes the handshake for `state`. Single use — replay is rejected."""
+def take_pending(state: str) -> tuple[str, str, int | None]:
+    """Consumes the handshake for `state`. Single use — replay is rejected.
+
+    Returns `(provider_id, pkce_verifier, link_user_id)`.
+    """
     _prune()
-    entry = _pending.pop(state, None)
+    entry = _pending.pop(state, None) if state else None
     if entry is None:
         raise OAuthError("Neplatný nebo prošlý přihlašovací požadavek.")
-    provider_id, verifier, _ = entry
-    return provider_id, verifier
+    provider_id, verifier, _exp, link_user_id = entry
+    return provider_id, verifier, link_user_id
 
 
 # ------------------------------------------------------------------ id tokens

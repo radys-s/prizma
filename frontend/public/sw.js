@@ -14,7 +14,10 @@
  * `/assets/*`), so it can be cached hard.
  */
 
-const VERSION = "prizma-v1";
+// Replaced at build time by the `prizma-sw-version` plugin in vite.config.ts.
+// It has to change every deploy, otherwise the `activate` cleanup below never
+// evicts anything and a stale shell can outlive several releases.
+const VERSION = "prizma-__BUILD_ID__";
 const SHELL = `${VERSION}-shell`;
 
 // Enough to open the app offline: the document, the manifest and the icons.
@@ -80,8 +83,14 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(SHELL).then((cache) => cache.put("/", copy));
+          // Only a real page becomes the offline shell. Without the `res.ok`
+          // check, a 421 from the host allowlist, a 500, or a hosting
+          // "service unavailable" interstitial gets written over "/" and is
+          // then what an offline user sees forever.
+          if (res.ok && request.method === "GET") {
+            const copy = res.clone();
+            caches.open(SHELL).then((cache) => cache.put("/", copy));
+          }
           return res;
         })
         .catch(() => caches.match("/").then((hit) => hit || Response.error()))

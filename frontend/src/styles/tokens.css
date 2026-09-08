@@ -18,25 +18,36 @@
 :root {
   color-scheme: light dark;
 
-  /* Surfaces. Warm neutrals in both themes — the light side is off-white, not
-     white, so long reading sessions stay as comfortable as the dark one. */
-  --bg-app: light-dark(#faf9f5, #262624);
-  --bg-sidebar: light-dark(#f0eee6, #1f1e1d);
-  --bg-surface: light-dark(#ffffff, #302f2c);
-  --bg-surface-hover: light-dark(#f4f2ec, #383632);
-  --bg-elevated: light-dark(#ffffff, #3a3835);
-  --bg-scrim: light-dark(rgb(60 56 50 / 34%), rgb(15 14 13 / 62%));
-  --bg-code: light-dark(#f7f5f0, #1c1b1a);
+  /* Surfaces. A six-step ladder in oklch, ported from the redesign: perceptual
+     lightness is the axis, so the steps between bg → sidebar → surface →
+     hover → elevated are evenly spaced *to the eye* rather than evenly spaced
+     in sRGB, which they never were. Hue 55-75 keeps the whole app warm; the
+     light side is off-white, not white, so long reading sessions stay as
+     comfortable as the dark one.
 
-  --border: light-dark(#e4e1d9, #3d3b37);
-  --border-strong: light-dark(#cdc9be, #4a4742);
+     Sidebar is darker than the app on both sides of the switch — it is
+     furniture, and furniture recedes. Elevated sits *above* surface on dark
+     and level with it on light, because a shadow does the lifting on white
+     and cannot on black. */
+  --bg-app: light-dark(oklch(98% 0.004 75), oklch(19% 0.012 55));
+  --bg-sidebar: light-dark(oklch(95.5% 0.007 70), oklch(16% 0.012 55));
+  --bg-surface: light-dark(oklch(99.2% 0.002 75), oklch(23% 0.013 55));
+  --bg-surface-hover: light-dark(oklch(94% 0.008 70), oklch(27% 0.014 55));
+  --bg-elevated: light-dark(oklch(99.5% 0.002 75), oklch(25% 0.014 55));
+  --bg-scrim: light-dark(rgb(60 56 50 / 34%), rgb(10 8 6 / 66%));
+  --bg-code: light-dark(oklch(97% 0.003 75), oklch(15% 0.01 55));
 
-  --text: light-dark(#262624, #f0eee6);
-  --text-muted: light-dark(#57534b, #b4b0a5);
-  /* Faint, not illegible: this is the colour of hostnames, timestamps and
-     hints at 11px, and the softer pair measured 4.2-4.3:1 on surface — the
-     wrong side of AA for text that small. */
-  --text-faint: light-dark(#736e61, #9d988c);
+  --border: light-dark(oklch(89% 0.008 65), oklch(32% 0.014 55));
+  --border-strong: light-dark(oklch(80% 0.012 60), oklch(38% 0.016 55));
+
+  --text: light-dark(oklch(23% 0.012 55), oklch(95% 0.006 70));
+  --text-muted: light-dark(oklch(45% 0.014 55), oklch(74% 0.012 60));
+  /* Faint, not illegible. The redesign puts this at 58%/56%, which measures
+     3.6-4.2:1 against the surfaces above — under AA for the 11px hostnames,
+     timestamps and hints that actually use it. Nudged to 52%/66%, where the
+     worst pairing (on --bg-surface-hover) is 4.63:1 light and 4.85:1 dark.
+     Same role in the ladder, one step further from the background. */
+  --text-faint: light-dark(oklch(52% 0.012 55), oklch(66% 0.012 60));
 
   /* The brand orange is the same ink in both themes — that is the point of a
      brand colour. Only the hover moves: darker on white, lighter on dark. */
@@ -105,14 +116,17 @@
   --dur-slow: 280ms;
   --ease: cubic-bezier(0.2, 0.6, 0.2, 1);
 
-  --font-sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, Inter, Roboto,
-    "Helvetica Neue", sans-serif;
-  --font-mono: "Cascadia Code", "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono",
-    monospace;
+  /* Self-hosted, declared in styles/fonts.css. The system stacks stay behind
+     them as the swap face: the app is readable before a single font file has
+     arrived, and identical everywhere once they have. */
+  --font-sans: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", -apple-system,
+    Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: "JetBrains Mono Variable", "Cascadia Code", "SF Mono", Consolas,
+    "Liberation Mono", monospace;
 
-  --sidebar-w: 264px;
-  --content-max: 46rem;
-  --topbar-h: 52px;
+  --sidebar-w: 260px;
+  --content-max: 760px;
+  --topbar-h: 58px;
 }
 
 /* The two forced modes. Setting `color-scheme` is the whole switch: every

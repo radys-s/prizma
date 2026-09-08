@@ -7,11 +7,14 @@ __pycache__/
 # backend local data (SQLite chat history) — never commit
 backend/data/
 backend/.env
+backend/tests/_tmp/
 
 # Node / frontend
 node_modules/
 frontend/dist/
 frontend/.vite/
+# inkrementální cache tsc — mění se při každém buildu
+frontend/tsconfig.tsbuildinfo
 
 # editors / OS
 .vscode/

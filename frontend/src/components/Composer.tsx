@@ -1,4 +1,4 @@
-import { ArrowUp, Cpu, Gauge, Globe, Square } from "lucide-react";
+import { ArrowUp, Cpu, Globe, Square } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -12,6 +12,7 @@ import {
 
 import { clearSetting, loadSetting, saveSetting } from "../lib/storage";
 import type { RoutingOptions } from "../lib/types";
+import { EffortSegments } from "./EffortSegments";
 import { RoutingPicker, type PickerOption } from "./RoutingPicker";
 import { SearchPicker } from "./SearchPicker";
 
@@ -186,9 +187,7 @@ export function Composer({
                   onChange={onModelChange}
                   disabled={disabled}
                 />
-                <RoutingPicker
-                  label="Náročnost"
-                  icon={<Gauge size={13} />}
+                <EffortSegments
                   options={effortOptions}
                   value={effort}
                   onChange={onEffortChange}

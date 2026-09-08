@@ -115,23 +115,18 @@ function costLine(message: ChatMessage): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-/** Favicon when the search API gave one, first letter of the host otherwise. */
+/**
+ * The first letter of the host, in a coloured square.
+ *
+ * It used to try `source.favicon` first and fall back to this. That never once
+ * worked in production: the page's own CSP is `img-src 'self' data:`, so every
+ * remote favicon was blocked and the fallback ran anyway — at the cost of a
+ * CSP violation per source card. Relaxing the policy to allow them would also
+ * mean the reader's IP reaches every site an answer happens to cite, before
+ * they have clicked anything. The monogram is the better answer on both counts.
+ */
 function SourceMark({ source }: { source: Source }) {
-  const [broken, setBroken] = useState(false);
   const host = hostOf(source.url);
-
-  if (source.favicon && !broken) {
-    return (
-      <img
-        className="source-icon"
-        src={source.favicon}
-        alt=""
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        onError={() => setBroken(true)}
-      />
-    );
-  }
   return <span className="source-icon mono">{host[0]?.toUpperCase() ?? "?"}</span>;
 }
 
@@ -286,6 +281,8 @@ export function Message({
   const chip = planChip(message);
   const note = substitutionNote(message, providerNames);
   const sources = message.sources ?? [];
+  const parts = message.parts ?? [];
+  const partsDone = parts.filter((p) => p.ok).length;
   const cost = costLine(message);
   // Ids have to be unique across the whole page. Only one message streams at a
   // time, so "live" cannot collide with anything.
@@ -381,6 +378,37 @@ export function Message({
           sourceCount={sources.length}
           anchorPrefix={prefix}
         />
+      )}
+
+      {/* Rozpad úkolu, složený. Živě ho ukazuje `SearchSteps`, ale ten zmizí
+          s prvním tokenem odpovědi — a právě tehdy začne být zajímavý:
+          čtenář vidí jeden text a nemá jak poznat, že ho psaly čtyři modely.
+          Sbalené, protože původ odpovědi je kontext, ne obsah. */}
+      {!message.streaming && parts.length > 0 && (
+        <details className="breakdown">
+          <summary>
+            <ChevronRight size={13} className="sources-caret" aria-hidden />
+            Rozděleno mezi modely
+            <span className="sources-count">
+              {partsDone}/{parts.length}
+            </span>
+          </summary>
+          <ol className="breakdown-list">
+            {parts.map((part) => (
+              <li
+                key={part.index}
+                className={`breakdown-part${part.ok === false ? " failed" : ""}`}
+              >
+                <span className="breakdown-title">{part.title}</span>
+                <span className="breakdown-model">
+                  {part.ok === false
+                    ? "neodpověděl"
+                    : part.display_name ?? "—"}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </details>
       )}
 
       {!message.streaming && sources.length > 0 && (

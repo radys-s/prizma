@@ -427,10 +427,16 @@ se nespustilo.
 **V `PUBLIC_MODE=1` peer check odpadá** — na serveru je každý návštěvník
 non-loopback a kontrola by odmítla všechny. Zbytek tabulky platí beze změny a
 zpřísní se: cookies dostanou `Secure`, `ALLOWED_HOSTS` musí obsahovat skutečnou
-doménu (jinak 421) a `allowed_origins()` se zúží na origin nasazené appky. Že
-tohle všechno opravdu drží, ověřuje `verify_public_mode.py` (20/20): veřejná IP
-projde, cizí `Origin` dostane 403, chybějící CSRF hlavička 403, neznámý `Host`
-421, a cookies se vrací se `Secure`, `HttpOnly` i `SameSite=Lax`.
+doménu (jinak 421) a `allowed_origins()` se zúží na origin nasazené appky.
+
+Že to drží, hlídá testová sada — `backend/tests/`, spouští se
+`python -m pytest tests` z `backend/` a běží celá v `PUBLIC_MODE=1`. Každý test
+je regrese k jednomu konkrétnímu útoku: podvržený OAuth callback bez state
+cookie, registrace na známou adresu se špatným heslem, neznámý `Host` → 421,
+tělo přes 1 MB → 413, HSTS a zbytek hlaviček, vypnuté `/docs`, a rozpad
+globálního lockoutu po tiché době. Dřív tu bylo odkázáno na
+`verify_public_mode.py` s výsledkem 20/20 — ten skript v repu nikdy nebyl, tohle
+ho nahrazuje.
 
 Peer check nikdy nebyl jediná vrstva — byl ta nejvzdálenější.
 

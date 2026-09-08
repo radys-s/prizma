@@ -34,6 +34,7 @@ import litellm
 from app import settings_store
 from app.providers import keystore, model_health
 from app.providers.registry import ProviderModel, by_id
+from app.routing import decompose as decomposing
 from app.routing import plan as planning
 from app.routing import research as researching
 from app.routing import selector
@@ -109,7 +110,12 @@ def _humanize(attempt: Attempt) -> str:
     text = str(exc)
     if "payment" in text.lower() or "billing" in text.lower():
         return f"{name}: účet vyžaduje ověřenou platební kartu."
-    return f"{name}: {text[:160]}"
+    # Anything litellm did not classify goes to the log, not to the browser.
+    # Its stringified errors routinely carry the api_base, the full request URL
+    # and the provider's raw JSON error body — which for several providers
+    # includes account or organisation identifiers.
+    log.warning("Neklasifikovaná chyba providera %s: %s", attempt.provider.id, text)
+    return f"{name}: požadavek selhal (podrobnosti v logu serveru)."
 
 
 def _summarize(attempts: list[Attempt]) -> str:
@@ -273,25 +279,30 @@ async def stream_chat(
     profile: EffortProfile,
     pinned: str | None = None,
     findings: researching.Findings | None = None,
+    breakdown: decomposing.Breakdown | None = None,
 ) -> AsyncIterator[StreamEvent]:
     providers = selector.candidates(plan.capability, plan.complexity, pinned=pinned)
     if not providers:
         raise selector.NoProviderAvailable(plan.capability)
 
-    # The user's standing instructions, the planner's analysis and any web
-    # findings ride in front as system turns, in that order — who to be, how to
-    # approach the task, then what is known about it. Custom instructions lead
-    # because they are the only one the user wrote: the planner should not be
-    # able to talk the model out of "always answer in English".
+    # The user's standing instructions, the planner's analysis, any web
+    # findings and the results of a fan-out ride in front as system turns, in
+    # that order — who to be, how to approach the task, then what is known
+    # about it. Custom instructions lead because they are the only one the user
+    # wrote: the planner should not be able to talk the model out of "always
+    # answer in English". The subtask results sit last, closest to the
+    # question, because they are the most specific material of the four.
     #
     # The user's own message stays exactly as they typed it, always; see the
-    # docstrings of routing/plan.py and routing/research.py.
+    # docstrings of routing/plan.py, routing/research.py and
+    # routing/decompose.py.
     preamble = [
         m
         for m in (
             _custom_instructions(),
             planning.system_message(plan),
             researching.system_message(findings) if findings else None,
+            decomposing.system_message(breakdown) if breakdown else None,
         )
         if m is not None
     ]

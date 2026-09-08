@@ -125,6 +125,27 @@ export interface Source {
   favicon?: string;
 }
 
+/** One piece of a task the router split across several models.
+ *
+ *  Persisted with the answer (`message.parts`), not just streamed. The merged
+ *  text is the deliverable, but it is also the one place where the split is
+ *  invisible: four models’ work reads exactly like one model’s, and a stage
+ *  that spends three or four requests from a daily quota should leave a trace
+ *  the reader can check after the fact. */
+export interface TaskPart {
+  index: number;
+  title: string;
+  /** Which provider took it. Absent until the part finishes. */
+  display_name?: string;
+  provider_id?: string;
+  /** Slug of the model that actually ran, e.g. "groq/openai-gpt-oss-120b". */
+  model?: string;
+  /** Set once the part is done: false means that model came back empty. */
+  ok?: boolean;
+  /** How long that part took, in milliseconds. */
+  ms?: number;
+}
+
 /** Globe control — mirrors `research.MODES` on the backend. */
 export type SearchMode = "auto" | "web" | "deep" | "off";
 
@@ -173,6 +194,12 @@ export interface Message {
   reading?: string[] | null;
   /** Live-only: what auto-compact folded away before this answer ran. */
   compact?: CompactInfo | null;
+
+  /** The subtasks a hard task was split into, in order. Written live by the
+   *  stream and read back from the row on a reload. */
+  parts?: TaskPart[] | null;
+  /** Live-only: why the split did not happen. Only shown when it was tried. */
+  parts_error?: string;
 
   /** Wall clock from request to last token. Null on pre-v3 rows. */
   latency_ms?: number | null;

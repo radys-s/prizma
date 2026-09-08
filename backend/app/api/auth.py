@@ -21,7 +21,8 @@ the second factor.
 """
 
 import hmac
-from urllib.parse import parse_qs
+import time
+from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
@@ -29,7 +30,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from app import mail
-from app.auth import challenges, core, identities, oauth, throttle, totp
+from app.auth import challenges, core, identities, oauth, ratelimit, throttle, totp
 from app.auth.guard import SAFE_METHODS, enforce_origin
 from app.config import settings
 from app.db import get_session
@@ -168,6 +169,15 @@ def _sign_in(session: Session, response: Response, user: AppUser, ip: str) -> di
     token, csrf = core.create_session(session, user.id)
     _issue_cookies(response, token, csrf)
     return {"authenticated": True}
+
+
+def _revoke_other_devices(request: Request, session: Session, user_id: int) -> None:
+    """Every credential change invalidates the sessions that predate it.
+
+    `core.revoke_others` keeps the caller's own session, so this is safe to
+    call from inside the screen that made the change.
+    """
+    core.revoke_others(session, user_id, request.cookies.get(core.SESSION_COOKIE))
 
 
 def _guard_throttle(session: Session, ip: str) -> None:
@@ -328,6 +338,7 @@ def set_passcode(
         identities.LOCAL_PROVIDER,
         core.hash_passcode(passcode),
     )
+    _revoke_other_devices(request, session, user.id)
     return {"ok": True}
 
 
@@ -357,7 +368,31 @@ def _mail_body(code: str, purpose: str) -> tuple[str, str]:
     )
 
 
+# address -> monotonic timestamp of the last code mailed to it. Resend's free
+# tier is 100 messages a day, and `/email/register` is reachable without a
+# session — without this, one script empties the day's quota in a minute and
+# nobody (including Tomáš) can receive a login code until tomorrow.
+_MAIL_COOLDOWN_SECONDS = 60.0
+_last_mailed: dict[str, float] = {}
+
+
+def _mail_cooldown_left(email: str) -> int:
+    now = time.monotonic()
+    for addr, sent in [(a, t) for a, t in _last_mailed.items()
+                       if now - t > _MAIL_COOLDOWN_SECONDS]:
+        del _last_mailed[addr]
+    sent = _last_mailed.get(email)
+    if sent is None:
+        return 0
+    return max(0, int(_MAIL_COOLDOWN_SECONDS - (now - sent)) + 1)
+
+
 async def _send_challenge(session: Session, user: AppUser, email: str, purpose: str) -> dict:
+    waiting = _mail_cooldown_left(email)
+    if waiting:
+        raise HTTPException(
+            status_code=429, detail=f"Kód už byl odeslán. Zkus to za {waiting} s."
+        )
     challenge, code = challenges.create(session, user.id, email, purpose)
     subject, body = _mail_body(code, purpose)
     if not await mail.send(email, subject, body):
@@ -367,6 +402,7 @@ async def _send_challenge(session: Session, user: AppUser, email: str, purpose: 
         session.delete(challenge)
         session.commit()
         raise HTTPException(status_code=503, detail="Nepodařilo se odeslat kód na e-mail.")
+    _last_mailed[email] = time.monotonic()
     return {
         "stage": "2fa",
         "challenge_id": challenge.id,
@@ -407,6 +443,18 @@ async def email_register(
             status_code=422,
             detail=f"Heslo musí mít aspoň {MIN_EMAIL_PASSWORD_LEN} znaků.",
         )
+
+    # Registering an address that already has an identity is a sign-in wearing a
+    # different hat. `identities.resolve` deliberately never re-checks
+    # `secret_hash` on an existing identity — a sign-in must not be able to
+    # rewrite the credential it was checked against — so without this, anyone
+    # could type the owner's address with any password and have a live login
+    # code mailed to it.
+    existing = identities.find_identity(session, identities.EMAIL_PROVIDER, email)
+    if existing is not None and not core.verify_passcode(
+        payload.password, existing.secret_hash
+    ):
+        raise _fail(session, ip, "Nesprávný e-mail nebo heslo.")
 
     try:
         user = identities.resolve(
@@ -628,6 +676,7 @@ def totp_disable(request: Request, session: Session = Depends(get_session)):
     session.add(user)
     session.commit()
     challenges.clear_recovery(session, user.id)
+    _revoke_other_devices(request, session, user.id)
     return {"confirmed": False}
 
 
@@ -648,6 +697,7 @@ def unlink_identity(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    _revoke_other_devices(request, session, user.id)
     return {"ok": True}
 
 
@@ -655,13 +705,41 @@ def unlink_identity(
 
 
 @router.get("/oauth/{provider_id}/start")
-def oauth_start(provider_id: str, request: Request):
+def oauth_start(provider_id: str, request: Request, session: Session = Depends(get_session)):
     enforce_origin(request)
+    # Unauthenticated and it costs a slot in the pending-handshake table, so it
+    # gets a ceiling of its own.
     try:
-        url = oauth.begin(provider_id)
+        ratelimit.check("oauth-start", _client_ip(request), limit=10, window=60.0)
+    except ratelimit.RateLimited as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Příliš mnoho pokusů. Zkus to za {exc.retry_after} s.",
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
+
+    current_user = _current_user(request, session)
+    try:
+        url, state = oauth.begin(
+            provider_id, link_user_id=current_user.id if current_user else None
+        )
     except oauth.OAuthError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return RedirectResponse(url, status_code=307)
+
+    response = RedirectResponse(url, status_code=307)
+    # Proof that the callback lands in the same browser that started the flow.
+    # HttpOnly so no script can read it, Lax so it survives the provider's
+    # top-level GET back, and short-lived because a handshake is short-lived.
+    response.set_cookie(
+        oauth.STATE_COOKIE,
+        state,
+        max_age=int(oauth.STATE_TTL_SECONDS),
+        httponly=True,
+        samesite="lax",
+        secure=settings.cookies_secure,
+        path="/api/auth/oauth",
+    )
+    return response
 
 
 def _finish_oauth(
@@ -678,17 +756,27 @@ def _finish_oauth(
             current_user=current_user,
         )
     except identities.DifferentAccount:
-        return RedirectResponse(
-            f"{settings.frontend_url}/?auth_error=jiny_ucet", status_code=303
-        )
+        return _oauth_failed("jiny_ucet")
     except identities.NotTheOwner:
-        return RedirectResponse(
-            f"{settings.frontend_url}/?auth_error=neni_vlastnik", status_code=303
-        )
+        return _oauth_failed("neni_vlastnik")
 
     token, csrf = core.create_session(session, user.id)
     response = RedirectResponse(settings.frontend_url, status_code=303)
     _issue_cookies(response, token, csrf)
+    return response
+
+
+def _oauth_failed(message: str) -> RedirectResponse:
+    """Back to the login screen with a readable reason.
+
+    `quote` matters: the messages are Czech sentences with spaces and
+    punctuation, which would otherwise truncate at the first character the
+    browser treats as a URL delimiter.
+    """
+    response = RedirectResponse(
+        f"{settings.frontend_url}/?auth_error={quote(message, safe='')}", status_code=303
+    )
+    response.delete_cookie(oauth.STATE_COOKIE, path="/api/auth/oauth")
     return response
 
 
@@ -702,16 +790,29 @@ async def oauth_callback(
 ):
     enforce_origin(request)
     current_user = _current_user(request, session)
+
+    # The cookie is the actual CSRF defence here — see `oauth.STATE_COOKIE`.
+    # Without it a forged callback would silently link an attacker's provider
+    # account to whoever is signed in, handing over every stored API key.
+    cookie_state = request.cookies.get(oauth.STATE_COOKIE, "")
+    if not state or not cookie_state or not hmac.compare_digest(state, cookie_state):
+        return _oauth_failed("Přihlášení neproběhlo v tomto prohlížeči. Zkuste to znovu.")
+
     try:
-        expected_provider, verifier = oauth.take_pending(state)
+        expected_provider, verifier, link_user_id = oauth.take_pending(state)
         if expected_provider != provider_id:
             raise oauth.OAuthError("Provider neodpovídá zahájenému přihlášení.")
+        # A flow started signed out must not finish as a link onto an account,
+        # and one started by user A must not finish on user B.
+        if link_user_id != (current_user.id if current_user else None):
+            raise oauth.OAuthError("Přihlášení se změnilo během přesměrování.")
         claims = await oauth.exchange(provider_id, code, verifier)
     except oauth.OAuthError as exc:
-        return RedirectResponse(
-            f"{settings.frontend_url}/?auth_error={exc}", status_code=303
-        )
-    return _finish_oauth(session, provider_id, claims, current_user)
+        return _oauth_failed(str(exc))
+
+    response = _finish_oauth(session, provider_id, claims, current_user)
+    response.delete_cookie(oauth.STATE_COOKIE, path="/api/auth/oauth")
+    return response
 
 
 @router.post("/oauth/{provider_id}/callback")

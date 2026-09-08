@@ -2,7 +2,8 @@
 
 Four tiers. They are not cosmetic — each one changes three concrete things:
 whether a planner model runs at all, what `reasoning_effort` is sent to the
-executor, and whether the answer gets a second review pass.
+executor, whether a hard task is split across several providers, and whether
+the answer gets a second review pass.
 
 `reasoning_effort` only reaches models that actually accept it. Probed against
 litellm 1.98.0 on 2026-08-28, that is Groq's gpt-oss slugs, Gemini Flash and
@@ -29,6 +30,11 @@ class EffortProfile:
     reasoning_effort: str | None  # passed through only if the slug accepts it
     max_tokens: int
     review_pass: bool  # second call that critiques and rewrites the answer
+    # Whether a task the planner rated "hard" may be split into independent
+    # parts, each answered by a different provider and merged afterwards
+    # (routing/decompose.py). Costs one request per part out of a free
+    # daily quota, so only the two deliberate tiers get it.
+    decompose: bool = False
 
 
 PROFILES: tuple[EffortProfile, ...] = (
@@ -41,6 +47,7 @@ PROFILES: tuple[EffortProfile, ...] = (
         reasoning_effort="low",
         max_tokens=1024,
         review_pass=False,
+        decompose=False,
     ),
     EffortProfile(
         id="medium",
@@ -51,26 +58,29 @@ PROFILES: tuple[EffortProfile, ...] = (
         reasoning_effort="medium",
         max_tokens=2048,
         review_pass=False,
+        decompose=False,
     ),
     EffortProfile(
         id="pro",
         label="Pro",
-        description="Podrobný plán a delší odpověď. Na složitější úkoly.",
+        description="Podrobný plán a delší odpověď. Složitý úkol rozdělí mezi víc modelů.",
         use_planner=True,
         plan_detail="full",
         reasoning_effort="high",
         max_tokens=4096,
         review_pass=False,
+        decompose=True,
     ),
     EffortProfile(
         id="max",
         label="Max",
-        description="Plán → odpověď → revize. Nejlepší výsledek, trvá dvakrát déle.",
+        description="Rozdělení mezi modely → odpověď → revize. Nejlepší výsledek, trvá nejdéle.",
         use_planner=True,
         plan_detail="full",
         reasoning_effort="high",
         max_tokens=8192,
         review_pass=True,
+        decompose=True,
     ),
 )
 

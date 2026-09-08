@@ -31,7 +31,7 @@ import {
 } from "./lib/api";
 import { conversationToMarkdown, downloadMarkdown, exportFilename } from "./lib/export";
 import { useServiceWorker } from "./lib/pwa";
-import { loadSetting, saveSetting } from "./lib/storage";
+import { clearSettingsWithPrefix, loadSetting, saveSetting } from "./lib/storage";
 import { applyTheme, loadTheme, saveTheme, watchSystem, type Theme } from "./lib/theme";
 import { useAutoScroll } from "./lib/useAutoScroll";
 import { useHotkeys } from "./lib/useHotkeys";
@@ -53,8 +53,9 @@ const EFFORT_KEY = "prizma.effort";
 const SEARCH_KEY = "prizma.search";
 
 /** One unsent-draft slot per conversation; "new" until the thread has an id. */
+const DRAFT_PREFIX = "prizma.draft.";
 const draftKeyFor = (conversationId: number | null) =>
-  `prizma.draft.${conversationId ?? "new"}`;
+  `${DRAFT_PREFIX}${conversationId ?? "new"}`;
 
 function patchLast(
   list: ChatMessage[],
@@ -404,6 +405,33 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
       if (stale()) return;
       setMessages((prev) => patchLast(prev, (m) => ({ ...m, reading: urls })));
     },
+    onSplitStart: (parts) => {
+      if (stale()) return;
+      setMessages((prev) => patchLast(prev, (m) => ({ ...m, parts, parts_error: undefined })));
+    },
+    onPartDone: (part) => {
+      if (stale()) return;
+      setMessages((prev) =>
+        patchLast(prev, (m) => ({
+          ...m,
+          // Merge rather than append: the part is already in the list from
+          // split_start, and results arrive in whatever order they finish.
+          parts: (m.parts ?? []).map((p) => (p.index === part.index ? { ...p, ...part } : p)),
+        }))
+      );
+    },
+    onSplitAbort: (reason) => {
+      if (stale()) return;
+      // Not an error the user has to act on — the answer still comes, just
+      // from one model. Kept quiet unless the split had already been announced.
+      setMessages((prev) =>
+        patchLast(prev, (m) =>
+          m.parts && m.parts.length > 0
+            ? { ...m, parts: null, parts_error: reason }
+            : m
+        )
+      );
+    },
     onSearchDone: (sources, partial) => {
       if (stale()) return;
       setMessages((prev) =>
@@ -660,6 +688,9 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
 
   const signOut = async () => {
     discardStream();
+    // Unsent text is content, not a preference: ending the session on purpose
+    // must not leave half-typed prompts behind on the device.
+    clearSettingsWithPrefix(DRAFT_PREFIX);
     await logout();
     onSignedOut();
   };

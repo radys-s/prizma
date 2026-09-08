@@ -3,15 +3,17 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 from sse_starlette.sse import EventSourceResponse
 
+from app.auth import ratelimit
 from app.db import engine, get_session
 from app.models.conversation import Conversation, Message
 from app.providers.client import stream_chat
 from app.routing import compact as compacting
+from app.routing import decompose as decomposing
 from app.routing import effort as effort_tiers
 from app.routing import plan as planning
 from app.routing import research as researching
@@ -27,8 +29,29 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 _naming: set[asyncio.Task] = set()
 
 
+# One answer can hold a worker for up to two minutes and spends provider quota,
+# so the ceiling is "a person typing fast", not "a script".
+_CHAT_LIMIT = 20
+_CHAT_WINDOW = 60.0
+
+
+def _limit_chat(request: Request) -> None:
+    ip = request.client.host if request.client else "unknown"
+    try:
+        ratelimit.check("chat", ip, limit=_CHAT_LIMIT, window=_CHAT_WINDOW)
+    except ratelimit.RateLimited as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Příliš mnoho zpráv za sebou. Zkus to za {exc.retry_after} s.",
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
+
+
 class ChatRequest(BaseModel):
-    message: str
+    # Capped for the same reason `EditRequest.content` is: nothing else in the
+    # stack bounds a request body, and this one is persisted, planned over and
+    # forwarded to a provider.
+    message: str = Field(min_length=1, max_length=32000)
     conversation_id: int | None = None
     # None or "auto" means full routing. Anything else is a registry provider
     # id the user pinned in the picker — honoured first, but not exclusively.
@@ -160,6 +183,22 @@ def _stream_response(
             ),
         }
 
+        # Jediné místo, kde je rozhodnutí routeru vidět v logu serveru. Bez něj
+        # se u chybějícího fan-outu nedá odlišit „tier to nedovolil“ od „plánovač
+        # úkol označil za moderate“ — a obojí vypadá stejně: jedna odpověď,
+        # žádný rozpad na části.
+        log.info(
+            "router: effort=%s capability=%s complexity=%s source=%s planner=%s "
+            "search=%s split=%s",
+            profile.id,
+            plan.capability,
+            plan.complexity,
+            plan.source,
+            plan.planner_model,
+            depth,
+            decomposing.should_split(plan, profile),
+        )
+
         # The search stage runs here rather than before the response so its
         # progress can be streamed: deep mode is allowed a minute and change,
         # and a minute of silence before the first frame looks like a hang.
@@ -204,6 +243,44 @@ def _stream_response(
                     ),
                 }
 
+        # Fan-out. Only fires when the planner rated the task hard and the
+        # tier allows it, and every failure path here just leaves `breakdown`
+        # None — the answer below is then written the ordinary way.
+        breakdown: decomposing.Breakdown | None = None
+        async for part in decomposing.run(messages, plan, profile):
+            if part.type == "split":
+                yield {
+                    "event": "split_start",
+                    "data": json.dumps(
+                        {
+                            "parts": [
+                                {"index": sub.index, "title": sub.title}
+                                for sub in part.subtasks
+                            ]
+                        }
+                    ),
+                }
+            elif part.type == "part_done" and part.result is not None:
+                res = part.result
+                yield {
+                    "event": "part_done",
+                    "data": json.dumps(
+                        {
+                            "index": res.subtask.index,
+                            "title": res.subtask.title,
+                            "provider_id": res.provider_id,
+                            "display_name": res.display_name,
+                            "model": res.model,
+                            "ok": res.ok,
+                            "ms": res.ms,
+                        }
+                    ),
+                }
+            elif part.type == "abort":
+                yield {"event": "split_abort", "data": json.dumps({"reason": part.reason})}
+            elif part.type == "done":
+                breakdown = part.breakdown
+
         assistant_text = ""
         draft = ""  # the pre-review answer, kept so a failed review can restore it
         in_review = False
@@ -215,7 +292,12 @@ def _stream_response(
         latency_ms = 0
         try:
             async for ev in stream_chat(
-                messages, plan, profile, pinned=pinned, findings=findings
+                messages,
+                plan,
+                profile,
+                pinned=pinned,
+                findings=findings,
+                breakdown=breakdown,
             ):
                 if ev.type == "review_start":
                     # The bubble is about to be rewritten in place — park the
@@ -282,6 +364,7 @@ def _stream_response(
                             # used the web", and a search that aborted did not.
                             search_mode=depth if findings else None,
                             sources=researching.sources_json(findings),
+                            parts=decomposing.parts_json(breakdown),
                             # Measured even when the stream was cut short, so a
                             # stopped answer still reports the time it took.
                             latency_ms=latency_ms
@@ -306,7 +389,12 @@ def _stream_response(
 
 
 @router.post("/stream")
-async def chat_stream(req: ChatRequest, session: Session = Depends(get_session)):
+async def chat_stream(
+    request: Request,
+    req: ChatRequest,
+    session: Session = Depends(get_session),
+):
+    _limit_chat(request)
     try:
         selector.require_minimum()
     except selector.NotEnoughProviders as exc:
@@ -352,7 +440,12 @@ async def chat_stream(req: ChatRequest, session: Session = Depends(get_session))
 
 
 @router.post("/regenerate")
-async def chat_regenerate(req: RegenerateRequest, session: Session = Depends(get_session)):
+async def chat_regenerate(
+    request: Request,
+    req: RegenerateRequest,
+    session: Session = Depends(get_session),
+):
+    _limit_chat(request)
     """Drops the trailing answer and re-runs the last user turn.
 
     Worth having here rather than client-side: the planner runs again and may
@@ -398,7 +491,12 @@ async def chat_regenerate(req: RegenerateRequest, session: Session = Depends(get
 
 
 @router.post("/edit")
-async def chat_edit(req: EditRequest, session: Session = Depends(get_session)):
+async def chat_edit(
+    request: Request,
+    req: EditRequest,
+    session: Session = Depends(get_session),
+):
+    _limit_chat(request)
     """Rewrites one user message and re-runs the thread from that point.
 
     Same shape as regenerate — the planner runs again on the new text, so an

@@ -1,4 +1,14 @@
-import { BookOpenText, Check, FoldVertical, Globe, PenLine, Route } from "lucide-react";
+import {
+  BookOpenText,
+  Check,
+  Cpu,
+  FoldVertical,
+  Globe,
+  PenLine,
+  Route,
+  Split,
+  X,
+} from "lucide-react";
 
 import type { Message as ChatMessage } from "../lib/types";
 
@@ -9,6 +19,12 @@ interface Step {
   label: string;
   icon: typeof Route;
   state: State;
+  /** Which model took this step, shown dimmed after the label. */
+  detail?: string;
+  /** Subtask rows sit indented under the split step they belong to. */
+  nested?: boolean;
+  /** The step ran and came back with nothing. Marked, not hidden. */
+  failed?: boolean;
 }
 
 /** Czech counts three ways. Both nouns below actually hit all three forms. */
@@ -78,9 +94,38 @@ function buildSteps(message: ChatMessage): Step[] {
     });
   }
 
+  // The fan-out. One row naming the split, then one row per part, each
+  // labelled with the model that actually took it — the whole point of the
+  // stage is that they are different models, so saying which is the feature.
+  const parts = message.parts ?? [];
+  if (parts.length > 0) {
+    const pending = parts.filter((p) => p.ok === undefined).length;
+    steps.push({
+      id: "split",
+      label: `Rozděluji na ${parts.length} ${plural(parts.length, "část", "části", "částí")}`,
+      icon: Split,
+      state: pending > 0 ? "active" : "done",
+    });
+    for (const part of parts) {
+      steps.push({
+        id: `part-${part.index}`,
+        label: part.title,
+        detail: part.display_name,
+        icon: Cpu,
+        state: part.ok === undefined ? "active" : "done",
+        failed: part.ok === false,
+        nested: true,
+      });
+    }
+  }
+
   steps.push({
     id: "write",
-    label: message.reviewing ? "Reviduji odpověď" : "Píšu odpověď",
+    label: message.reviewing
+      ? "Reviduji odpověď"
+      : parts.length > 0
+        ? "Skládám odpověď"
+        : "Píšu odpověď",
     icon: PenLine,
     state: writing ? "active" : "todo",
   });
@@ -96,11 +141,24 @@ export function SearchSteps({ message }: { message: ChatMessage }) {
       {steps.map((step) => {
         const Icon = step.icon;
         return (
-          <li key={step.id} className="step" data-state={step.state}>
+          <li
+            key={step.id}
+            className="step"
+            data-state={step.state}
+            data-nested={step.nested ? "" : undefined}
+            data-failed={step.failed ? "" : undefined}
+          >
             <span className="step-mark">
-              {step.state === "done" ? <Check size={11} /> : <Icon size={11} />}
+              {step.failed ? (
+                <X size={11} />
+              ) : step.state === "done" ? (
+                <Check size={11} />
+              ) : (
+                <Icon size={11} />
+              )}
             </span>
             <span className="step-label">{step.label}</span>
+            {step.detail ? <span className="step-detail">{step.detail}</span> : null}
           </li>
         );
       })}

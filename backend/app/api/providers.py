@@ -13,18 +13,45 @@ Security model for the key-writing endpoints (see also keystore.py and
 """
 
 import asyncio
+import logging
 import webbrowser
 
 import litellm
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from app import crypto
+from app.auth import ratelimit
 from app.config import settings
 from app.providers import keystore, local_llm, model_health
 from app.providers.registry import ProviderModel, active, by_id
 from app.routing import websearch
+
+log = logging.getLogger(__name__)
+
+
+def _limit(request: Request, key: str, *, limit: int, window: float) -> None:
+    ip = request.client.host if request.client else "unknown"
+    try:
+        ratelimit.check(key, ip, limit=limit, window=window)
+    except ratelimit.RateLimited as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Příliš mnoho pokusů za sebou. Zkus to za {exc.retry_after} s.",
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
+
+
+def _opaque(exc: Exception, where: str) -> str:
+    """Log the real error, hand the browser a sentence that leaks nothing.
+
+    litellm and httpx stringify their failures with the api_base, the full
+    request URL and the provider's raw JSON body attached. Truncating that to
+    200 characters limits the blast radius; it does not make it safe to show.
+    """
+    log.warning("%s: %s", where, exc)
+    return "Test selhal — podrobnosti jsou v logu serveru."
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 
@@ -235,7 +262,7 @@ def _classify_local(exc: Exception, model: str) -> tuple[bool, str, str]:
             "Endpoint běží, ale požadavek mu spadl. Podívej se do jeho logu — "
             "typicky se model nevešel do paměti.",
         )
-    return False, "error", f"Endpoint selhal: {str(exc)[:200]}"
+    return False, "error", _opaque(exc, "Test lokálního endpointu")
 
 
 def _classify(exc: Exception, model: str) -> tuple[bool, str, str]:
@@ -271,7 +298,7 @@ def _classify(exc: Exception, model: str) -> tuple[bool, str, str]:
             "Klíč je platný, ale účet vyžaduje ověřenou platební kartu. "
             "Dokud ji nepřidáš, router tohoto providera přeskočí.",
         )
-    return False, "error", f"Test selhal: {text[:200]}"
+    return False, "error", _opaque(exc, "Test klíče providera")
 
 
 def _classify_search(exc: Exception) -> dict:
@@ -308,16 +335,18 @@ def _classify_search(exc: Exception) -> dict:
             "level": "error",
             "detail": "Nepodařilo se spojit s providerem — zkontroluj připojení.",
         }
-    return {"ok": False, "level": "error", "detail": f"Test selhal: {str(exc)[:200]}"}
+    return {"ok": False, "level": "error", "detail": _opaque(exc, "Test klíče hledání")}
 
 
 @router.post("/{provider_id}/test")
-async def test_provider_key(provider_id: str):
+async def test_provider_key(provider_id: str, request: Request):
     """Sends a real minimal request — the only proof a key actually works.
 
     Walks the provider's candidate slugs so one retired model doesn't make a
     perfectly good key look broken.
     """
+    # Every call is at least one outbound request, and the walk can be several.
+    _limit(request, "provider-test", limit=10, window=60.0)
     provider = _provider_or_404(provider_id)
     api_key = keystore.get_key(provider.credential_id)
     # A local endpoint has no key to test — what is worth testing there is

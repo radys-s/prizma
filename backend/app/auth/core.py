@@ -118,6 +118,27 @@ def revoke_all_for_user(session: Session, user_id: int) -> None:
     session.commit()
 
 
+def revoke_others(session: Session, user_id: int, keep_token: str | None) -> int:
+    """Sign every *other* device out. -> how many sessions were dropped.
+
+    Called whenever a credential changes. A session that outlives the password
+    it was obtained under is the whole reason "change your password" is advice
+    at all: without this, someone who got in with the old code stays in.
+
+    The caller's own session is deliberately kept — being logged out of the tab
+    you just used to change your own access code reads as the change failing.
+    """
+    keep = _hash_token(keep_token) if keep_token else None
+    dropped = 0
+    for row in session.exec(select(AuthSession).where(AuthSession.user_id == user_id)).all():
+        if keep is not None and hmac.compare_digest(row.token_hash, keep):
+            continue
+        session.delete(row)
+        dropped += 1
+    session.commit()
+    return dropped
+
+
 # --------------------------------------------------------------------- users
 
 

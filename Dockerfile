@@ -33,9 +33,12 @@ WORKDIR /app
 
 # `psycopg[binary]` ships its own libpq, so there is no build toolchain and no
 # `libpq-dev` to install. The image stays slim and the build stays fast.
-COPY backend/pyproject.toml /app/backend/
+COPY backend/pyproject.toml backend/requirements.lock /app/backend/
 COPY backend/app /app/backend/app
-RUN pip install --no-cache-dir /app/backend
+# `-c` and not `-r`: the lock caps versions of whatever gets resolved without
+# dictating the package list, so litellm cannot jump a major version between
+# two deploys while the Linux-only extras (uvloop, httptools) still install.
+RUN pip install --no-cache-dir -c /app/backend/requirements.lock /app/backend
 
 # `spa.py` looks for the built SPA at `<backend>/../frontend/dist`, so the
 # layout inside the image has to mirror the repository.

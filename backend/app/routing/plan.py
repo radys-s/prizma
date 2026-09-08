@@ -89,6 +89,11 @@ class Plan:
     needs_search: bool = False
 
 
+# Poznámka k rubrice složitosti níž: "hard" není jen popisek, je to jediná
+# podmínka, na kterou se ptá `decompose.should_split()`. Dokud v promptu nebyl
+# odstavec o počítání výstupů, dostaly dvě prakticky stejně stavěné žádosti
+# (obojí pět pojmenovaných částí, teplota 0) jednou "hard" a jednou "moderate"
+# — a rozpad na podúkoly tak fungoval obden. Měřeno 2026-09-08.
 _SYSTEM_PROMPT = """You are the routing planner of a multi-provider chat app.
 You do NOT answer the user. You analyse their latest message and decide how it
 should be handled, then hand off to a second model that writes the answer.
@@ -106,6 +111,13 @@ Reply with a single JSON object and nothing else. Keys:
   - "trivial"   one or two sentences would fully answer it
   - "moderate"  a normal explanation or a self-contained piece of code
   - "hard"      multi-step reasoning, tricky trade-offs, or a large deliverable
+
+Count the deliverables before you choose between "moderate" and "hard". A
+message that asks for three or more distinct outputs — separate sections,
+separate artefacts, or a list of aspects each of which needs its own analysis —
+is "hard", however plainly it is written. Judge the amount of work, not how
+easy the request was to understand: a clearly phrased request for five things
+is still five things.
 
 "needs_search": true only if answering correctly requires information that
 changes over time and that a language model cannot know from training — news,

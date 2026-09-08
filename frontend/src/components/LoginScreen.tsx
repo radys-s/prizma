@@ -168,6 +168,36 @@ export function LoginScreen({ state, onAuthenticated }: Props) {
           </>
         )}
 
+        {/* Dvě rovnocenné cesty dovnitř, obě vidět naráz. Předtím to byl odkaz
+            pod formulářem: druhá možnost existovala, ale bylo ji vidět až na
+            konci obrazovky, na kterou se člověk chodí podívat právě proto, že
+            neví, kterou z nich má použít. */}
+        {state.passcode_enabled && state.email_enabled && (
+          <div className="auth-tabs" role="radiogroup" aria-label="Způsob přihlášení">
+            {(
+              [
+                ["email", "E-mail"],
+                ["passcode", "Přístupový kód"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={mode === id}
+                className="auth-tab"
+                tabIndex={mode === id ? 0 : -1}
+                onClick={() => {
+                  setMode(id);
+                  setError("");
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {state.email_enabled && mode !== "passcode" && (
           <EmailForm
             state={state}
@@ -188,22 +218,6 @@ export function LoginScreen({ state, onAuthenticated }: Props) {
             onError={absorb}
             onAuthenticated={onAuthenticated}
           />
-        )}
-
-        {/* The access code is a shortcut for the person who already owns the
-            app, not a headline way in — so it sits behind a disclosure rather
-            than competing with the real credentials above it. */}
-        {state.passcode_enabled && state.email_enabled && (
-          <button
-            type="button"
-            className="auth-link auth-link-block"
-            onClick={() => {
-              setMode(mode === "passcode" ? "email" : "passcode");
-              setError("");
-            }}
-          >
-            {mode === "passcode" ? "Přihlásit se e-mailem" : "Mám přístupový kód"}
-          </button>
         )}
 
         {!state.email_enabled && !state.passcode_enabled && !anySocial && (

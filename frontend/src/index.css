@@ -1,3 +1,4 @@
+@import "./styles/fonts.css";
 @import "./styles/tokens.css";
 
 /* ---------------------------------------------------------------- base --- */
@@ -236,8 +237,11 @@ textarea {
   align-items: center;
   gap: 4px;
   min-height: 34px;
-  padding: 7px 7px 7px 13px;
-  border-radius: var(--radius-pill);
+  margin-bottom: 1px;
+  /* Měkký obdélník, ne pilulka. Pilulka na seznamu, kde se položky dotýkají,
+     drží mezi sebou klínové mezery a řádky se opticky rozpadají. */
+  padding: 7px 7px 7px 10px;
+  border-radius: 10px;
   cursor: pointer;
   font-size: 13.5px;
   color: var(--text-muted);
@@ -249,10 +253,14 @@ textarea {
   color: var(--text);
 }
 
+/* Aktivní konverzace se pozná ze dvou metrů: nálev v akcentu a proužek na
+   hraně. Samotná světlejší plocha se v tmavém režimu ztrácí proti hoveru. */
 .conversation-item.active {
-  background: var(--bg-surface-hover);
+  padding-left: 13px;
+  background: var(--accent-soft);
+  box-shadow: inset 2.5px 0 0 var(--accent);
   color: var(--text);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .conversation-title {
@@ -490,8 +498,25 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px;
-  font-weight: 500;
-  color: var(--text-muted);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Zelená tečka = server odpovídá. Halo místo obrysu, aby to na 6 px nebyl
+   jen šum, a `flex-shrink: 0`, protože titulek vedle ní se smršťuje. */
+.topbar-status {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft);
+  transition: background-color var(--dur-base) var(--ease);
+}
+
+.topbar-status.off {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
 }
 
 /* ------------------------------------------------------------ buttons ---- */
@@ -683,7 +708,7 @@ textarea {
   padding: 32px clamp(16px, 4vw, 32px) 16px;
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 28px;
 }
 
 .message {
@@ -703,7 +728,7 @@ textarea {
    `--bg-app`), ve světlém je ale bílá na skoro bílé — proto ještě obrys. */
 .message.user .bubble {
   max-width: 78%;
-  padding: 11px 17px;
+  padding: 12px 18px;
   border: 1px solid var(--border);
   border-radius: 20px;
   background: var(--bg-surface);
@@ -744,15 +769,15 @@ textarea {
 .provider-mark {
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
   /* The tile carries the tint and the letter is knocked out of it in the
      surface colour. The fallback matters: without it a mark whose tint failed
      to arrive would be a letter on nothing. */
   background: var(--mark-tint, var(--text-faint));
   color: var(--bg-surface);
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0;
@@ -872,6 +897,49 @@ textarea {
 
 .step[data-state="todo"] {
   opacity: 0.6;
+}
+
+/* Subtask rows. Indented under the split they belong to and one notch
+   quieter: which parts ran is context, the merged answer is the deliverable. */
+.step[data-nested] {
+  margin-left: 14px;
+  font-size: 12px;
+}
+
+.step[data-nested] .step-mark {
+  width: 16px;
+  height: 16px;
+}
+
+/* Which model took this part. The stage exists to spread the work across
+   different providers, so naming them is the point, not decoration. */
+.step-detail {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.step-detail::before {
+  content: "· ";
+}
+
+/* A part that came back empty. The answer still ran, with that piece missing,
+   and saying so beats a row that silently ticks green. */
+.step[data-failed] {
+  color: var(--text-faint);
+}
+
+.step[data-failed] .step-mark {
+  border-color: transparent;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.step[data-failed] .step-label {
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
 }
 
 @keyframes breathe {
@@ -1267,6 +1335,91 @@ textarea {
   color: var(--text);
 }
 
+/* ---------------------------------------------------------- breakdown --- */
+
+/* Záměrně stejná skládací schránka jako u zdrojů: obojí říká „odkud se ta
+   odpověď vzala“ a dvě různá pouzdra pro tutéž roli by četla jako dvě různé
+   funkce. Liší se jen obsah uvnitř. */
+.breakdown {
+  margin: 14px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  font-size: 12.5px;
+}
+
+.breakdown summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  border-radius: var(--radius-md);
+  transition: color var(--dur) var(--ease);
+}
+
+.breakdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.breakdown summary:hover {
+  color: var(--text);
+}
+
+.breakdown[open] .sources-caret {
+  transform: rotate(90deg);
+}
+
+.breakdown-list {
+  margin: 0;
+  padding: 0 12px 10px 12px;
+  list-style: none;
+  counter-reset: part;
+}
+
+.breakdown-part {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  counter-increment: part;
+}
+
+/* Číslo je součást citace: syntezizér se na části odkazuje pořadím, takže
+   tady musí být vidět totéž pořadí, ne abecední ani podle rychlosti. */
+.breakdown-part::before {
+  content: counter(part);
+  flex-shrink: 0;
+  min-width: 14px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+}
+
+.breakdown-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+}
+
+.breakdown-model {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.breakdown-part.failed .breakdown-title {
+  color: var(--text-muted);
+}
+
+.breakdown-part.failed .breakdown-model {
+  color: var(--danger);
+}
+
 /* ------------------------------------------------------------- prose ----- */
 
 .prose {
@@ -1565,7 +1718,10 @@ textarea {
 .empty-state {
   position: relative;
   min-height: 100%;
-  max-width: var(--content-max);
+  /* Bez `max-width`. Ambientní vrstva pod nadpisem má jít přes celou plochu —
+     světlo rozložené hranolem nemá důvod končit svislým řezem uprostřed
+     obrazovky. Šířku textu proto drží jednotlivé děti (nadpis, odstavec,
+     mřížka návrhů, tip), ne tenhle box. */
   margin-inline: auto;
   padding: 24px clamp(16px, 4vw, 32px) 20px;
   display: flex;
@@ -1573,10 +1729,11 @@ textarea {
   align-items: center;
   justify-content: center;
   text-align: center;
-  /* Aurora přesahuje box schválně a `aurora-drift` ji navíc zvětšuje o 9 %.
-     Bez ořezu z toho v `.messages` vznikl skutečný vodorovný posuvník, který
-     se objevoval a mizel podle fáze animace. `clip` na jedné ose nezakládá
-     scroll kontejner, takže svislé rolování zůstává na `.messages`. */
+  /* Aurora přesahuje box schválně: `aurora-drift` ji zvětšuje o 7 %. Bez ořezu
+     z toho v `.messages` vznikl skutečný vodorovný posuvník, který se objevoval
+     a mizel podle fáze animace. `clip` na jedné ose nezakládá scroll kontejner
+     — a protože svislé přetečení tady zůstává `visible`, nedegraduje na
+     `hidden`, jako by se stalo o úroveň výš na `.messages`. */
   overflow-x: clip;
   animation: fade-in-up var(--dur-slow) var(--ease);
 }
@@ -1596,8 +1753,13 @@ textarea {
   top: 6%;
   left: 50%;
   z-index: 0;
-  width: min(760px, 125%);
-  aspect-ratio: 2.2;
+  /* Přes celou plochu, ne přes sloupec textu. Dokud byl pás široký 760 px,
+     končil svislým řezem uprostřed obrazovky — přechod, který někde začíná
+     a někde končí, už není ambientní vrstva, ale obdélník.
+     Výška v procentech, ne přes `aspect-ratio`: na širokém monitoru by poměr
+     2.2 udělal pás vyšší než obrazovka. */
+  width: 100%;
+  height: min(58%, 440px);
   translate: -50% 0;
   pointer-events: none;
   /* Široký nízký pás, ne kulatá skvrna. Kruh uprostřed obrazovky vypadal jako
@@ -1607,8 +1769,8 @@ textarea {
     radial-gradient(40% 54% at 20% 52%, var(--spectrum-5), transparent 72%),
     radial-gradient(38% 52% at 50% 42%, var(--spectrum-4), transparent 72%),
     radial-gradient(40% 54% at 80% 54%, var(--spectrum-2), transparent 72%);
-  filter: blur(46px);
-  opacity: 0.24;
+  filter: blur(64px);
+  opacity: 0.26;
   animation: aurora-drift 24s var(--ease) infinite alternate;
 }
 
@@ -1633,6 +1795,7 @@ textarea {
    úplně, proto plná barva jako základ a přechod až uvnitř `@supports`. */
 .empty-title {
   margin: 0 0 10px;
+  max-width: var(--content-max);
   font-size: clamp(28px, 4.6vw, 44px);
   font-weight: 500;
   line-height: 1.12;
@@ -1656,21 +1819,28 @@ textarea {
   }
 }
 
-.empty-state p {
+.empty-state > p {
+  /* Užší než mřížka pod ní: podnadpis je jedna věta a přes celou šířku
+     vlákna se z ní stane řádek, který se čte zleva doprava jako tabulka. */
+  max-width: 420px;
   margin: 0 0 26px;
   color: var(--text-muted);
   font-size: 14.5px;
 }
 
-/* Mřížka stejně širokých karet, ne řádek vystředěných pilulek. Tři pilulky
+/* Mřížka stejně širokých karet, ne řádek vystředěných pilulek. Pilulky
    s různě dlouhým textem se vystředily každá jinak a schodovitý útvar, který
    z toho vznikl, vypadal jako nedopatření. Mřížka dá kartám jednu levou
-   hranu a jednu výšku, takže se čtou jako nabídka. */
+   hranu a jednu výšku, takže se čtou jako nabídka.
+
+   Dva sloupce, ne čtyři: čtyři karty v řadě přes celou šířku vlákna jsou
+   pruh nadpisů, ve kterém se oko nemá čeho chytit. Čtverec 2×2 v užším
+   sloupci má těžiště pod nadpisem, kde se člověk stejně dívá. */
 .suggestions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  width: 100%;
+  width: min(100%, 620px);
 }
 
 .suggestion {
@@ -1678,8 +1848,8 @@ textarea {
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
-  min-height: 124px;
-  padding: 14px 14px 12px;
+  min-height: 104px;
+  padding: 14px 16px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
@@ -1830,51 +2000,26 @@ textarea {
   gap: 8px;
   padding: 13px 12px 10px 18px;
   border: 1px solid var(--border);
-  /* Větší než --radius-xl: pole na psaní má být to nejměkčí na obrazovce,
-     a při jednom řádku se tvarem blíží pilulce. */
-  border-radius: 26px;
+  /* Stejný rádius jako karty a dialogy. Pilulkový tvar dával smysl, dokud
+     v poli byl jeden řádek a tři pilulky pod ním; s přepínačem náročnosti
+     uvnitř je to plocha, ne tlačítko, a plochy v téhle appce mají 16. */
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   box-shadow: var(--shadow-md);
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 
-/* Spektrální obrys místo oranžového prstence. Je to jediná animovaná barva
-   v celé appce a nese přesně to, co se v tu chvíli děje: do pole vstupuje
-   jeden text a hranol z něj rozdělí cestu k několika modelům.
+/* Akcentní prstenec místo spektrálního obrysu, který tu byl předtím.
 
-   Technicky je to gradient v pseudoprvku, kterému maska vykrojí střed —
-   `border-image` neumí zaoblené rohy a `box-shadow` neumí přechod. Element je
-   `pointer-events: none`, takže i když se překrývá s obsahem, nic neblokuje. */
-.composer::before {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    104deg,
-    var(--spectrum-5),
-    var(--spectrum-4) 28%,
-    var(--spectrum-3) 54%,
-    var(--spectrum-2) 76%,
-    var(--spectrum-1)
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur) var(--ease);
-}
+   Spektrum je identita appky a čte se, dokud je vzácné. Když svítilo kolem
+   pole na psaní, svítilo pořád — pole je v ohnisku většinu času, kdy je appka
+   otevřená — a z identity se stala dekorace. Zůstává tam, kde skutečně něco
+   říká: ve znaku, v nadpisu prázdné obrazovky a v ikonách karet s návrhy.
 
+   Prstenec je `box-shadow`, ne obrys, takže nehne layoutem ani o pixel. */
 .composer:focus-within {
-  border-color: transparent;
-  box-shadow: var(--shadow-lg);
-}
-
-.composer:focus-within::before {
-  opacity: 1;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-lg), 0 0 0 3px var(--accent-soft);
 }
 
 .composer textarea {
@@ -1905,6 +2050,54 @@ textarea {
   min-width: 0;
   /* Takes the slack so the send button stays hard right. */
   flex: 1;
+}
+
+/* Náročnost jako škála, ne jako nabídka. Čtyři stupně se vejdou vedle sebe
+   a jejich pořadí je ta informace — v rozbalovací nabídce z ní zbývalo jedno
+   slovo bez měřítka. Dráha má stejnou výšku i pozadí jako pickery vedle,
+   takže řádek pod polem zůstává jeden pruh, ne dva různé prvky. */
+.segments {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  flex-shrink: 0;
+  padding: 2px;
+  /* Viditelná dráha, ne jen pozadí. `--bg-code` je proti ploše composeru
+     ve světlém režimu skoro k nerozeznání a čtyři stupně se bez obrysu
+     rozpadly na čtyři volně ležící slova. Obrys drží, že je to jedna škála. */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-code);
+}
+
+.segment {
+  padding: 0 10px;
+  height: 100%;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.segment:hover:not(:disabled):not([aria-checked="true"]) {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.segment[aria-checked="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.segment:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .composer textarea::placeholder {
@@ -2153,6 +2346,21 @@ textarea {
     flex: 0 1 calc(50% - 3px);
   }
 
+  /* Škála dostane vlastní řádek přes celou šířku. Vmáčknutá mezi dvě pilulky
+     by se čtyři stupně zúžily na neklikatelné proužky — a jsou to zároveň
+     jediné čtyři cíle v tom řádku, které se mačkají prstem. */
+  .segments {
+    flex: 1 0 100%;
+    /* Až pod oba pickery. Vklíněná mezi ně by rozdělila dvě pilulky, které
+       spolu souvisí — model a web — na dva samostatné řádky. */
+    order: 1;
+    justify-content: space-between;
+  }
+
+  .segment {
+    flex: 1;
+  }
+
   .picker-trigger {
     width: 100%;
     padding: 0 8px;
@@ -2260,14 +2468,23 @@ textarea {
   opacity: 0.45;
 }
 
+/* Dlaždice, ne holá ikona. V seznamu, kde se střídají příkazy, modely
+   a konverzace, drží čtverec levou hranu řádků na jednom místě — jinak
+   se text posouval podle toho, jak široká zrovna byla ikona. */
 .palette-icon {
   display: grid;
   place-items: center;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
+  border-radius: 7px;
+  background: var(--bg-code);
   color: var(--text-faint);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
 .palette-item[data-active="true"] .palette-icon {
+  background: var(--accent-soft);
   color: var(--accent-hover);
 }
 
@@ -2546,6 +2763,15 @@ textarea {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Větší varianta monogramu: v hlavičce karty je to jediné, co provider
+   odlišuje na první pohled, kdežto ve zprávě je to jen značka u jména. */
+.provider-head .provider-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 12.5px;
 }
 
 /* Celý signál „nastaveno“, v šesti pixelech. */
@@ -3012,11 +3238,11 @@ kbd.mono {
 .auth-card {
   padding: clamp(24px, 3.4vw, 34px);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
+  border-radius: 24px;
   /* Semi-transparent over the aurora, so the card feels like glass sitting on
      the light rather than a rectangle pasted over it. */
   background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
-  backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(20px) saturate(140%);
   box-shadow: var(--shadow-lg);
   animation: pop-in var(--dur-slow) var(--ease) both;
 }
@@ -3357,6 +3583,43 @@ kbd.mono {
   width: 100%;
   margin-top: 14px;
   justify-content: center;
+}
+
+/* Přepínač způsobu přihlášení. Stejná dráha jako škála náročnosti
+   v composeru — jeden vzor pro „vyber jednu z mála možností“ v celé appce —
+   jen širší, protože tohle je hlavní ovládací prvek obrazovky. */
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  margin-bottom: 18px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+}
+
+.auth-tab {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.auth-tab:hover:not([aria-checked="true"]) {
+  background: var(--bg-surface-hover);
+  color: var(--text);
+}
+
+.auth-tab[aria-checked="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
 @media (max-width: 400px) {

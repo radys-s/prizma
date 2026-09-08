@@ -52,6 +52,24 @@ def _index() -> FileResponse:
     return FileResponse(DIST_DIR / "index.html", headers={"Cache-Control": _HTML_CACHE})
 
 
+class _ImmutableStatic(StaticFiles):
+    """`StaticFiles` plus the `Cache-Control` header it does not send.
+
+    Starlette sets only `etag` and `last-modified`, so every returning visitor
+    revalidates every bundle — against a free instance that may be asleep. The
+    filenames here are content-hashed by Vite, so the file at a given path can
+    never change and a year of immutable caching is simply true.
+
+    The service worker's cache-first rule for `/assets/` hides this after the
+    first visit, which is exactly why it never showed up in testing.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers.setdefault("Cache-Control", _IMMUTABLE)
+        return response
+
+
 def mount(app: FastAPI) -> bool:
     """Attach the SPA routes. Returns whether anything was mounted."""
     if not is_built():
@@ -62,7 +80,7 @@ def mount(app: FastAPI) -> bool:
         # Vite fingerprints every filename in here, so a given URL's contents
         # can never change — a year of immutable caching is safe and means a
         # returning visitor downloads nothing but the HTML.
-        app.mount("/assets", StaticFiles(directory=assets), name="assets")
+        app.mount("/assets", _ImmutableStatic(directory=assets), name="assets")
 
     @app.get("/", include_in_schema=False)
     def index():

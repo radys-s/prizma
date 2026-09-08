@@ -22,6 +22,7 @@ import {
 import type { AuthState, Provider } from "../lib/types";
 import { AccountSection } from "./AccountSection";
 import { LocalModelSection } from "./LocalModelSection";
+import { ProviderMark } from "./ProviderMark";
 
 const CAPABILITY_LABELS: Record<string, string> = {
   fast: "rychlé",
@@ -370,8 +371,9 @@ export function ProvidersModal({
                 className={`provider-card${group.configured ? " configured" : ""}`}
               >
                 <div className="provider-head">
-                  <span className="provider-dot" aria-hidden="true" />
+                  <ProviderMark id={group.primary.id} name={group.name} />
                   <span className="provider-name">{group.name}</span>
+                  <span className="provider-dot" aria-hidden="true" />
                   <span className="provider-state">
                     {group.configured ? "Nastaveno" : "Chybí klíč"}
                   </span>
