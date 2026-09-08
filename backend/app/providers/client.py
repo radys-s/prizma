@@ -247,6 +247,47 @@ async def _stream_review(
             yield delta
 
 
+# Základní pravidla odpovědi, která jedou před každým dotazem.
+#
+# Do téhle chvíle nejely žádná: když plánovač nedoběhl nebo byl vypnutý
+# (tier Light) a uživatel neměl vlastní pokyny, dostal model holou konverzaci
+# bez jediného systémového turnu. Na free tieru je to poznat okamžitě — model
+# spadne do výchozího chování své rodiny: úvod, který převypráví otázku, tři
+# odstavce opatrnosti, odrážky tam, kde stačí věta, a na konci otázka zpátky.
+# Není to chyba modelu, je to absence zadání.
+#
+# Co je tady napsané, je proto vybrané podle toho, co malé modely kazí nejčastěji,
+# ne podle toho, co zní hezky. Každý řádek je jedna konkrétní chyba:
+#
+#   * odpověď v jiném jazyce než dotaz — u českého dotazu velmi častá,
+#   * převyprávění otázky a „Skvělá otázka!" místo odpovědi,
+#   * vata a hedging tam, kde model odpověď zná,
+#   * vymyšlené API, čísla a zdroje, protože přiznat neznalost je horší pocit,
+#   * useknutý kód s `# zbytek doplň` — nespustitelný, a tedy k ničemu,
+#   * protiotázka místo odpovědi u lehce nejednoznačného zadání.
+#
+# Držené krátké schválně. Dlouhý systémový prompt na modelu s 8k kontextem
+# vytlačuje konverzaci, a čím víc pravidel, tím menší šance, že model dodrží
+# to podstatné.
+_HOUSE_RULES = (
+    "Odpovídej ve stejném jazyce, jakým je psaný dotaz.\n\n"
+    "Začni odpovědí, ne úvodem. Nepřevyprávěj otázku, nehodnoť ji a nedělej "
+    "závěrečné shrnutí toho, co jsi právě napsal. Délku odpovědi řiď podle "
+    "otázky: na krátkou otázku krátká odpověď.\n\n"
+    "Strukturu použij, jen když obsah opravdu má části. Odrážky nejsou "
+    "náhrada za souvislý text a nadpis nad třemi větami je navíc.\n\n"
+    "Nevymýšlej si. Fakta, čísla, názvy funkcí a odkazy uváděj jen tehdy, "
+    "když si jimi jsi jistý; jinak řekni, co nevíš. Odhad označ jako odhad.\n\n"
+    "Kód piš celý a spustitelný, ve fenced bloku s názvem jazyka. Žádné "
+    "„zbytek doplň sám\" uprostřed funkce.\n\n"
+    "Když je zadání nejednoznačné, vyber nejpravděpodobnější výklad, napiš "
+    "jednou větou, z čeho vycházíš, a odpověz. Ptej se zpátky jen tehdy, když "
+    "by odpověď byla při špatném výkladu k ničemu."
+)
+
+_HOUSE_MESSAGE: dict = {"role": "system", "content": _HOUSE_RULES}
+
+
 def _custom_instructions() -> dict | None:
     """The user's standing instructions as a system turn, if they set any.
 
@@ -281,13 +322,18 @@ async def stream_chat(
     if not providers:
         raise selector.NoProviderAvailable(plan.capability)
 
-    # The user's standing instructions, the planner's analysis, any web
-    # findings and the results of a fan-out ride in front as system turns, in
-    # that order — who to be, how to approach the task, then what is known
-    # about it. Custom instructions lead because they are the only one the user
-    # wrote: the planner should not be able to talk the model out of "always
-    # answer in English". The subtask results sit last, closest to the
-    # question, because they are the most specific material of the four.
+    # The house rules, the user's standing instructions, the planner's
+    # analysis, any web findings and the results of a fan-out ride in front as
+    # system turns, in that order — how to write, then who to listen to, then
+    # how to approach the task, then what is known about it.
+    #
+    # The house rules lead because they are the floor, not the ceiling: they
+    # say how an answer should look when nobody said otherwise. Custom
+    # instructions come straight after so the user can overrule any of them —
+    # a later system turn is the one the model follows — while the planner,
+    # further back still, cannot talk the model out of "always answer in
+    # English". The subtask results sit last, closest to the question, because
+    # they are the most specific material of the five.
     #
     # The user's own message stays exactly as they typed it, always; see the
     # docstrings of routing/plan.py, routing/research.py and
@@ -295,6 +341,7 @@ async def stream_chat(
     preamble = [
         m
         for m in (
+            _HOUSE_MESSAGE,
             _custom_instructions(),
             planning.system_message(plan),
             researching.system_message(findings) if findings else None,

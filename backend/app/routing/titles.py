@@ -22,7 +22,7 @@ from sqlmodel import Session
 
 from app.db import engine
 from app.models.conversation import Conversation
-from app.providers import keystore, model_health
+from app.providers import failures, keystore, model_health
 from app.routing import selector
 
 log = logging.getLogger(__name__)
@@ -117,6 +117,11 @@ async def suggest(question: str, answer: str) -> str:
                 return title
         except Exception as exc:  # noqa: BLE001 - a name is never worth an error
             log.info("title suggestion failed on %s: %s", provider.id, exc)
+            # Zapsat, co to selhání znamenalo. Bez toho narazí každé další
+            # pojmenování na stejný mrtvý slug a stejné 404 — a tady je jich
+            # v řadě několik, takže se název konverzace hledá o desítky sekund
+            # déle, než musí.
+            failures.record(exc, provider_id=provider.id, model=model)
             continue
     return ""
 

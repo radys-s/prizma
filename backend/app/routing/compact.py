@@ -31,7 +31,7 @@ import litellm
 from sqlmodel import Session
 
 from app.models.conversation import Conversation, Message
-from app.providers import keystore, model_health
+from app.providers import failures, keystore, model_health
 from app.routing import selector
 
 log = logging.getLogger(__name__)
@@ -145,6 +145,9 @@ async def _summarise(text: str) -> str:
             log.warning("compaction returned nothing on %s (%s)", provider.id, model)
         except Exception as exc:  # noqa: BLE001 - see module docstring
             log.warning("compaction failed on %s (%s): %s", provider.id, model, exc)
+            # Stejný důvod jako v `titles.py`: mrtvý slug se má zapsat,
+            # jinak na něj narazí i shrnutí příště a hlavně hlavní odpověď.
+            failures.record(exc, provider_id=provider.id, model=model)
             continue
     return ""
 

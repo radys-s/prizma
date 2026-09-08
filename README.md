@@ -189,6 +189,69 @@ udělat jenom jednou, není build. Cenou je **C# 5**: žádná interpolace řet�
 > pozorování, ne jako diagnózu. Tebe to potká leda po rebuildu — na hotovém
 > `aplikace.exe` se to neopakovalo.
 
+### Po přihlášení do Windows
+
+Prizma umí běžet pořád, ne jen když se na ni klikne. Dvě naplánované úlohy pro
+přihlášeného uživatele — bez práv správce, bez služby:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\startup\autostart.ps1
+```
+
+| úloha | co dělá | zpoždění |
+|---|---|---|
+| `Prizma AutoStart` | `pythonw.exe tools\startup\serve.py` — server na `127.0.0.1:8000`, bez okna | 30 s |
+| `Claude AutoStart` | Claude přes AppUserModelId (`explorer.exe shell:AppsFolder\…`) | 45 s |
+
+Zpoždění je schválně: hned po přihlášení si disk berou plocha, OneDrive
+a antivirus, a server, který se v té tlačenici spouští, naběhne pomaleji než
+o půl minuty později. Server sám potřebuje asi **5 sekund**, než začne
+odpovídat.
+
+Spouští se **`serve.py`, ne `aplikace.exe`**. Ten drží uvicorn v job objectu
+s `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, což je u klikacího spuštění správně
+(zavřu okno → server zhasne), ale u služby na pozadí je to přesně to, co
+nechceme. A `serve.py`, ne rovnou `-m uvicorn`: pythonw nemá stdout ani stderr,
+uvicorn si při startu staví `StreamHandler(sys.stderr)` a první zalogovaný
+řádek proces shodí — Správce úloh k tomu řekne jen „výsledek 1". `serve.py`
+proto obojí nejdřív přesměruje do logu:
+
+```
+%LOCALAPPDATA%\Prizma\server.log
+```
+
+To je první místo, kam se podívat, když appka po přihlášení nenaběhne.
+
+Zpět: `autostart.ps1 -Remove` (odstraní obě úlohy i zástupce na ploše).
+
+#### Zbytek startupu
+
+Druhý skript vypne všechno ostatní, co se spouští po přihlášení:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\startup\cleanup-startup.ps1 -Apply
+```
+
+Bez `-Apply` jen vypíše, co by udělal. Vypíná stejným způsobem jako Správce
+úloh (bajt v `StartupApproved`), takže se nic neodinstaluje. Před každou změnou
+se uloží záloha do `%LOCALAPPDATA%\Prizma\startup-backup.json` a
+`cleanup-startup.ps1 -Undo` z ní obnoví přesně původní stav.
+
+**Co zůstává zapnuté, ať se vypíná cokoli** (seznam `$Keep` ve skriptu):
+
+- **Norton a Windows Security** — vypnout ochranu kvůli rychlejšímu bootu je
+  špatný obchod za každých okolností;
+- **OneDrive** — na tomhle stroji je v OneDrivu celá plocha včetně
+  `Projekty\`. Vypnutý OneDrive neznamená pomalejší synchronizaci, ale žádnou;
+- **Prizma a Claude**.
+
+**Služeb se skript nedotýká.** Antivirus, ovladače a systémové věci běží jako
+služby, ne jako startup položky, a vypínat je kvůli startu je přesně ta
+kategorie zásahů, po které přestane fungovat něco úplně jiného.
+
+Položky pod `HKLM` (Java Update Scheduler, Opera autoupdate) chtějí PowerShell
+spuštěný **jako správce** — skript je bez elevace přeskočí a vypíše je na konci.
+
 ## Přihlášení
 
 Appka je pořád **single-user** — účet je jeden a nedá se z něj udělat víc. Co se
