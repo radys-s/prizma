@@ -8,7 +8,9 @@ stage runs long.
 """
 
 import asyncio
+from types import SimpleNamespace
 
+import litellm
 import pytest
 
 from app.providers.registry import ProviderModel
@@ -309,3 +311,84 @@ def test_a_long_part_is_truncated_before_it_reaches_the_executor():
     )
     assert len(message["content"]) < decompose._RESULT_CHARS * 3
     assert "(zkráceno)" in message["content"]
+
+
+# ------------------------------------------------ what a failed part parks
+
+# The stage is allowed to fail. What it is not allowed to do is take healthy
+# models away from the answer that follows it: `model_health.mark_dead()` lasts
+# an hour and applies to the whole process, `client.stream_chat` walks exactly
+# the same `usable_models()`, and a part that timed out says nothing about the
+# model. Four concurrent requests to free tiers under a 45s ceiling means the
+# timeout here is the routine case, not the rare one.
+
+
+def two_slug_provider() -> ProviderModel:
+    return ProviderModel(
+        id="alfa",
+        display_name="Alfa",
+        models=("alfa/one", "alfa/two"),
+        capabilities=("general",),
+        signup_url="https://example.invalid",
+    )
+
+
+@pytest.fixture()
+def isolated_health(monkeypatch):
+    """Fresh health state, and no key lookup or network under `_run_part`."""
+    decompose.model_health.reset()
+    decompose.selector.reset_cooldowns()
+    monkeypatch.setattr(decompose.keystore, "endpoint", lambda provider: {})
+    yield
+    decompose.model_health.reset()
+    decompose.selector.reset_cooldowns()
+
+
+def run_part(provider_model) -> decompose.PartResult:
+    return asyncio.run(decompose._run_part(subtask(1), provider_model, effort.resolve("pro")))
+
+
+def test_a_slow_part_does_not_park_the_model_it_ran_on(isolated_health, monkeypatch):
+    async def acompletion(**kwargs):
+        raise litellm.Timeout("pomalé", kwargs["model"], "alfa")
+
+    monkeypatch.setattr(decompose.litellm, "acompletion", acompletion)
+    result = run_part(two_slug_provider())
+
+    assert result.ok is False
+    assert not decompose.model_health.is_dead("alfa/one")
+    # The provider said it was busy, so a minute of cooldown is the right read.
+    assert decompose.selector._in_cooldown("alfa") is True
+
+
+def test_a_retired_slug_is_parked_and_the_next_one_tried(isolated_health, monkeypatch):
+    tried: list[str] = []
+
+    async def acompletion(**kwargs):
+        tried.append(kwargs["model"])
+        raise litellm.NotFoundError("pryč", kwargs["model"], "alfa")
+
+    monkeypatch.setattr(decompose.litellm, "acompletion", acompletion)
+    result = run_part(two_slug_provider())
+
+    assert tried == ["alfa/one", "alfa/two"]  # a 404 moves on to the next slug
+    assert decompose.model_health.is_dead("alfa/one")
+    # A retired model is not a busy provider — the rest of it still works.
+    assert decompose.selector._in_cooldown("alfa") is False
+    assert result.ok is False
+
+
+def test_an_empty_answer_parks_neither_the_slug_nor_the_provider(
+    isolated_health, monkeypatch
+):
+    async def acompletion(**kwargs):
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="   "))]
+        )
+
+    monkeypatch.setattr(decompose.litellm, "acompletion", acompletion)
+    result = run_part(two_slug_provider())
+
+    assert result.ok is False
+    assert not decompose.model_health.is_dead("alfa/one")
+    assert decompose.selector._in_cooldown("alfa") is False

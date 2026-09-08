@@ -644,6 +644,11 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   };
 
   const removeConversation = async (id: number) => {
+    // Smazat vlákno, do kterého se právě píše, je běžná věc — a bez tohohle
+    // řádku po něm zůstal zamčený composer: běh nikdo nepřevzal, takže
+    // `streaming` shodil až `onDone` o půl minuty později. `discardStream`
+    // zároveň posune run id, takže do prázdného seznamu už nikdo nepíše.
+    if (id === currentId) discardStream();
     await guard(() => deleteConversation(id));
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (id === currentId) {

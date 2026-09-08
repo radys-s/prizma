@@ -43,7 +43,7 @@ from dataclasses import dataclass
 
 import litellm
 
-from app.providers import keystore, model_health
+from app.providers import failures, keystore, model_health
 from app.providers.registry import CAPABILITIES, ProviderModel
 from app.routing import selector
 from app.routing.effort import EffortProfile
@@ -315,6 +315,7 @@ async def _run_part(
     """
     started = time.monotonic()
     last_error = "nedostupný model"
+    busy = False
 
     for model in model_health.usable_models(provider.models):
         try:
@@ -344,9 +345,22 @@ async def _run_part(
         except Exception as exc:  # noqa: BLE001 - one dead part must not kill the rest
             last_error = type(exc).__name__
             log.warning("part %s on %s (%s) failed: %s", sub.index, provider.id, model, exc)
-            model_health.mark_dead(model)
+            # Jen 404 znamená, že slug je pryč. Tady se dřív značilo jako mrtvé
+            # cokoli — a `mark_dead` platí hodinu a napříč celým procesem, takže
+            # jeden timeout v části (čtyři souběžné požadavky na free tier se
+            # 45s stropem, timeout je tu běžný stav) sebral funkční model
+            # i hlavní odpovědi. Stejné dělení jako v `providers/client.py`.
+            if failures.is_dead_model(exc):
+                model_health.mark_dead(model)
+                continue  # stejný provider, další slug
+            busy = busy or failures.is_busy(exc)
+            break  # problém je na úrovni providera — další slug ho neobejde
 
-    selector.mark_cooldown(provider.id)
+    # Cooldown jen tehdy, když provider sám řekl, že je zahlcený. Prázdná
+    # odpověď je taky selhání části, ale není důvod kvůli ní schovat providera
+    # před hlavní odpovědí.
+    if busy:
+        selector.mark_cooldown(provider.id)
     return PartResult(
         subtask=sub,
         provider_id=provider.id,
@@ -473,10 +487,10 @@ def parts_json(breakdown: Breakdown | None) -> str | None:
     """The fan-out as a JSON string for the message row, or None when it never ran.
 
     Stejný tvar, jaký stream posílá v události `part_done`, aby se karta po
-    reloadu nepromlěnila v něco jiného, než co uživatel viděl živě.
+    reloadu neproměnila v něco jiného, než co uživatel viděl živě.
 
     Ukládá se i část, která se nepovedla. Rozpad na části je jediná věc, kterou
-    uživatel na výsledku nemůže zpětně poznát — „tři modely ze čtyř“ je jiná
+    uživatel na výsledku nemůže zpětně poznat — „tři modely ze čtyř“ je jiná
     informace než „tři modely“, a druhé čtení odpovědi je právě ta chvíle, kdy
     na tom záleží.
     """

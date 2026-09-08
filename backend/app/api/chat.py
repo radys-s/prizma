@@ -337,6 +337,24 @@ def _stream_response(
                 # half-written revision is not. Keep the complete one.
                 assistant_text = draft or assistant_text
                 revised = False
+            # Konverzace se dá smazat uprostřed streamu a `finally` se provede
+            # tak jako tak. Bez téhle kontroly by odpověď skončila jako řádek
+            # ukazující na neexistující vlákno: nikdy se nezobrazí, nikdy se
+            # nesmaže a drží cizí klíč na záznam, který už není.
+            #
+            # Vlastní krátká session, ne `return` uvnitř `finally` — ten by
+            # spolkl i GeneratorExit, kterým se generátor zavírá při odpojení
+            # klienta, a asyncio by to ohlásilo jako „async generator ignored
+            # GeneratorExit“. Cena je jeden SELECT na konci streamu.
+            if assistant_text:
+                with Session(engine) as check_session:
+                    if check_session.get(Conversation, conversation_id) is None:
+                        log.info(
+                            "odpověď zahozena — konverzace %s mezitím smazána",
+                            conversation_id,
+                        )
+                        assistant_text = ""
+
             if assistant_text:
                 with Session(engine) as save_session:
                     # Only now, with a real answer in hand, do the superseded
