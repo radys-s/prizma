@@ -32,7 +32,7 @@ from dataclasses import dataclass
 
 import litellm
 
-from app.providers import keystore, model_health
+from app.providers import failures, keystore, model_health
 from app.providers.registry import CAPABILITIES, ProviderModel
 from app.routing import selector
 from app.routing.classifier import classify
@@ -287,6 +287,10 @@ async def _ask_planner(
             return _build(_parse(raw), model, fallback)
         except Exception as exc:  # noqa: BLE001 - deliberately broad, see docstring
             log.warning("planner %s (%s) failed: %s", provider.id, model, exc)
+            # Plánovač běží před každou odpovědí v tieru medium a výš,
+            # takže je to nejčastější místo, kde se na mrtvý slug naráží —
+            # a dosud jediné, které si z toho nic neodneslo.
+            failures.record(exc, provider_id=provider.id, model=model)
             continue
 
     return fallback
