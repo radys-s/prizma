@@ -29,3 +29,23 @@ export function clearSetting(key: string): void {
     /* same as above */
   }
 }
+
+/**
+ * Drops every key with this prefix. Used to clear composer drafts on sign-out.
+ *
+ * Unsent message text is the one thing in localStorage that is actual content
+ * rather than a preference, and it survived logout — half-typed prompts left
+ * on a shared or borrowed device after the session was ended on purpose.
+ */
+export function clearSettingsWithPrefix(prefix: string): void {
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(prefix)) doomed.push(key);
+    }
+    doomed.forEach((key) => window.localStorage.removeItem(key));
+  } catch {
+    /* same as above */
+  }
+}

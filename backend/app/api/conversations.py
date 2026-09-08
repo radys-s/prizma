@@ -18,29 +18,32 @@ SEARCH_MIN_CHARS = 2
 SNIPPET_RADIUS = 60
 
 
+# JSON *text* columns on `message`. Dumping one straight out sends the client a
+# string where its type says list, and the strip that renders it then shows
+# nothing — or worse, one card per character. Decoding belongs here rather than
+# in the browser: the storage format is a backend detail.
+_JSON_LIST_COLUMNS = ("sources", "parts")
+
+
 def _serialize(message: Message) -> dict:
     """Row -> what the client actually expects.
 
-    `sources` is a JSON *text* column, so dumping the row straight out sends
-    the client a string where its type says list, and the sources strip then
-    renders nothing (or worse, one card per character). Decoding belongs here
-    rather than in the browser: the storage format is a backend detail.
-
-    A row whose JSON is unreadable degrades to no sources at all — an answer
-    without its receipts is worse than one with them, but it is still an
-    answer, and a 500 on the whole conversation is not.
+    A row whose JSON is unreadable degrades to no sources (or no parts) at all —
+    an answer without its receipts is worse than one with them, but it is still
+    an answer, and a 500 on the whole conversation is not.
     """
     data = message.model_dump()
-    raw = data.get("sources")
-    if not raw:
-        data["sources"] = None
-        return data
-    try:
-        parsed = json.loads(raw)
-    except (TypeError, ValueError):
-        data["sources"] = None
-        return data
-    data["sources"] = parsed if isinstance(parsed, list) else None
+    for column in _JSON_LIST_COLUMNS:
+        raw = data.get(column)
+        if not raw:
+            data[column] = None
+            continue
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            data[column] = None
+            continue
+        data[column] = parsed if isinstance(parsed, list) else None
     return data
 
 

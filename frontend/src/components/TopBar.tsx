@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import { Command, KeyRound, PanelLeft } from "lucide-react";
 
 interface Props {
@@ -25,6 +27,22 @@ export function TopBar({
   // now that the alert no longer sits on top of the conversation.
   const short = configuredCount < minSlots;
 
+  // Živý stav připojení. `AppShell` testuje server jen při startu, takže když
+  // se spojení ztratí uprostřed sezení, jinde v rozhraní se to nikde neukáže —
+  // až u odeslané zprávy, která spadne. Tečka to řekne dřív.
+  const [online, setOnline] = useState(() => navigator.onLine);
+
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener("online", up);
+    window.addEventListener("offline", down);
+    return () => {
+      window.removeEventListener("online", up);
+      window.removeEventListener("offline", down);
+    };
+  }, []);
+
   return (
     <header className="topbar">
       <button
@@ -36,6 +54,13 @@ export function TopBar({
       >
         <PanelLeft size={17} />
       </button>
+
+      <span
+        className={`topbar-status${online ? "" : " off"}`}
+        role="status"
+        aria-label={online ? "Připojeno" : "Bez připojení"}
+        title={online ? "Připojeno" : "Bez připojení k internetu"}
+      />
 
       <div className="topbar-title">{title}</div>
 

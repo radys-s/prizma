@@ -33,6 +33,14 @@ dev = [
     "httpx>=0.27",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The suite rewrites the environment before importing anything from `app`
+# (see tests/conftest.py); an import from the repo root would load the
+# developer's own .env first and point the tests at the real database.
+pythonpath = ["."]
+filterwarnings = ["ignore::DeprecationWarning"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]

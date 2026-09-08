@@ -1,7 +1,49 @@
+import logging
+from urllib.parse import urlsplit, urlunsplit
+
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.config import settings
+
+log = logging.getLogger(__name__)
+
+
+def normalize_database_url(raw: str) -> str:
+    """Turn whatever the provider's copy button produced into a URL that boots.
+
+    Neon hands out `postgresql://…` and plenty of tools still emit
+    `postgres://…`. Both are *valid* Postgres URLs and both crash this app,
+    because only `psycopg[binary]` is installed: SQLAlchemy maps the first onto
+    the psycopg2 dialect (`ModuleNotFoundError: psycopg2`) and rejects the
+    second outright (`Can't load plugin: sqlalchemy.dialects:postgres`). The
+    only spelling that works is the hand-edited `postgresql+psycopg://`, which
+    is a footgun that goes off *after* the image has built, as a crash loop.
+
+    TLS is forced for the same reason it is not optional on a hosted database:
+    libpq's default `sslmode=prefer` will silently accept an unencrypted
+    connection, and the credentials in this URL are the whole database.
+    """
+    url = raw.strip()
+    if not url:
+        return url
+
+    scheme, sep, rest = url.partition("://")
+    if not sep:
+        return url
+    if scheme in ("postgres", "postgresql", "postgresql+psycopg2"):
+        url = f"postgresql+psycopg://{rest}"
+        scheme = "postgresql+psycopg"
+
+    if not scheme.startswith("postgresql"):
+        return url
+
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if host not in ("localhost", "127.0.0.1", "::1") and "sslmode=" not in (parts.query or ""):
+        query = f"{parts.query}&sslmode=require" if parts.query else "sslmode=require"
+        url = urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+    return url
 
 
 def _build_engine():
@@ -20,11 +62,12 @@ def _build_engine():
     is busy, so this is the common path, not the edge case.
     """
     if settings.database_url:
-        return create_engine(
-            settings.database_url,
-            pool_pre_ping=True,
-            pool_recycle=300,
-        )
+        url = normalize_database_url(settings.database_url)
+        # Scheme and host only. The rest of this string is the database
+        # password, and a deploy log is not a secret store.
+        parts = urlsplit(url)
+        log.info("Databáze: %s na %s", parts.scheme, parts.hostname or "?")
+        return create_engine(url, pool_pre_ping=True, pool_recycle=300)
     return create_engine(
         f"sqlite:///{settings.db_path}",
         connect_args={"check_same_thread": False},
@@ -51,6 +94,7 @@ _MESSAGE_COLUMNS: dict[str, str] = {
     "revised": "BOOLEAN NOT NULL DEFAULT 0",
     "search_mode": "TEXT",
     "sources": "TEXT",
+    "parts": "TEXT",
     # What the answer cost. Nullable because every row written before this
     # existed has neither, and because plenty of providers never report usage —
     # a missing token count is normal, not an error.
@@ -97,13 +141,19 @@ def _migrate() -> None:
     `sqlite_master`, `BOOLEAN NOT NULL DEFAULT 0`. Postgres understands none of
     the first two and spells the third differently.
 
-    Rewriting it to be dialect-neutral would be pretending to support a
-    migration that cannot exist: there is no Postgres database in the world that
-    predates these columns, because the first one will be created by
-    `create_all()` — correctly and complete — the moment this app first connects
-    to Neon. Legacy repair is a legacy concern, and the legacy is a local file.
+    Postgres gets the same intent through a different door, below: it has no
+    `PRAGMA`, but it does have `ADD COLUMN IF NOT EXISTS`, which makes the whole
+    check-then-alter dance one statement.
+
+    Skipping Postgres entirely — as this used to — is only safe once. The first
+    deploy is fine, because `create_all()` builds every table complete. The
+    *second* time a column is added to a model, `create_all()` will not touch
+    the table that already exists, the column silently is not there, and every
+    read of that table 500s in production with no way to fix it short of
+    hand-written SQL against Neon.
     """
     if engine.dialect.name != "sqlite":
+        _migrate_postgres()
         return
 
     with engine.begin() as conn:
@@ -118,6 +168,42 @@ def _migrate() -> None:
             for column, ddl in columns.items():
                 if column not in present:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+
+
+# SQLite spells booleans as 0/1 and Postgres does not, so the handful of
+# non-portable defaults above are translated rather than duplicated.
+_PG_DDL = {
+    "BOOLEAN NOT NULL DEFAULT 0": "BOOLEAN NOT NULL DEFAULT FALSE",
+    "BOOLEAN NOT NULL DEFAULT 1": "BOOLEAN NOT NULL DEFAULT TRUE",
+}
+
+
+def _migrate_postgres() -> None:
+    """The same additive repair, in one statement per column.
+
+    `ADD COLUMN IF NOT EXISTS` has been in Postgres since 9.6 and is a no-op
+    when the column is already there, so this runs on every boot and costs
+    nothing after the first. Table and column names come from the literal dicts
+    above — never from input.
+    """
+    with engine.begin() as conn:
+        present = {
+            row[0]
+            for row in conn.exec_driver_sql(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = current_schema()"
+            )
+        }
+        for table, columns in _COLUMNS.items():
+            if table not in present:
+                continue  # fresh database — create_all() already built it correctly
+            for column, ddl in columns.items():
+                conn.execute(
+                    text(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "
+                        f"{column} {_PG_DDL.get(ddl, ddl)}"
+                    )
+                )
 
 
 def _backfill_identities() -> None:

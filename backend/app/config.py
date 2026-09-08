@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,8 +18,10 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
-    host: str = "127.0.0.1"
-    port: int = 8000
+    # `host` and `port` used to live here and were read by nothing: uvicorn is
+    # given them on its own command line, locally and in the Dockerfile alike.
+    # Two settings that look authoritative and change nothing are worse than no
+    # settings at all.
     db_path: Path = DATA_DIR / "app.db"
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
@@ -115,6 +118,22 @@ class Settings(BaseSettings):
         """`Secure` on a localhost cookie would stop it being set at all."""
         return self.public_mode
 
+    def effective_allowed_hosts(self) -> list[str]:
+        """`allowed_hosts`, or the hostname of `public_base_url` if it is empty.
+
+        The deployment hostname otherwise has to be typed correctly in three
+        separate variables, and getting it wrong fails in the least helpful way
+        available: `HardeningMiddleware` rejects *every* request with 421,
+        including Render's health check, so the service never goes live and the
+        log says only "Neplatná adresa serveru". Deriving it means one value has
+        to be right instead of three.
+        """
+        explicit = [h.strip() for h in self.allowed_hosts if h.strip()]
+        if explicit:
+            return explicit
+        host = urlsplit(self.public_base_url).hostname
+        return [host] if host else []
+
     def allowed_origins(self) -> set[str]:
         """Origins a browser may drive this API from.
 
@@ -148,10 +167,17 @@ def check_public_mode(current: Settings) -> None:
     problems: list[str] = []
     if not current.secret_key:
         problems.append("SECRET_KEY není nastavený — bez něj nejde dešifrovat žádný API klíč.")
-    if not current.allowed_hosts:
+    if not current.effective_allowed_hosts():
         problems.append("ALLOWED_HOSTS je prázdný — server by odmítl vlastní doménu (421).")
     if not current.public_base_url.startswith("https://"):
         problems.append("PUBLIC_BASE_URL musí být https:// adresa nasazené aplikace.")
+    if not current.owner_email.strip():
+        # Without it `identities.owner_allows()` returns True for everyone, so
+        # between the deploy going live and the first sign-in, whoever finds the
+        # URL first can claim the account — and with it every stored API key.
+        problems.append(
+            "OWNER_EMAIL je prázdný — účet by si mohl nárokovat kdokoli, kdo najde adresu."
+        )
     if problems:
         raise ConfigError("PUBLIC_MODE=1, ale: " + " ".join(problems))
 

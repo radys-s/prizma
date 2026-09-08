@@ -12,6 +12,7 @@ import type {
   RoutingOptions,
   RoutingPlan,
   Source,
+  TaskPart,
 } from "./types";
 
 async function detailOf(res: Response, fallback: string): Promise<string> {
@@ -416,6 +417,12 @@ export interface StreamHandlers {
   onSearchAbort?: (reason: string) => void;
   /** Deep mode only: the top hits are being fetched in full. */
   onReadStart?: (urls: string[]) => void;
+  /** Pro/Max on a hard task: it was split, each part goes to its own model. */
+  onSplitStart?: (parts: TaskPart[]) => void;
+  /** One part came back. `ok` false means that model produced nothing. */
+  onPartDone?: (part: TaskPart) => void;
+  /** No split happened — the answer is written the ordinary way. */
+  onSplitAbort?: (reason: string) => void;
   /** `note` is set when a pinned provider had to be swapped out. */
   onMeta?: (providerId: string, modelName: string, note: string) => void;
   onDelta?: (content: string) => void;
@@ -594,6 +601,13 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
     partial?: boolean;
     reason?: string;
     urls?: string[];
+    parts?: { index: number; title: string }[];
+    index?: number;
+    title?: string;
+    display_name?: string;
+    model?: string;
+    ok?: boolean;
+    ms?: number;
     latency_ms?: number;
     tokens?: number;
     folded?: number;
@@ -640,6 +654,25 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
       break;
     case "read_start":
       handlers.onReadStart?.(payload.urls ?? []);
+      break;
+    case "split_start":
+      handlers.onSplitStart?.(payload.parts ?? []);
+      break;
+    case "part_done":
+      if (payload.index !== undefined) {
+        handlers.onPartDone?.({
+          index: payload.index,
+          title: payload.title ?? "",
+          display_name: payload.display_name,
+          provider_id: payload.provider_id,
+          model: payload.model,
+          ok: payload.ok === true,
+          ms: payload.ms,
+        });
+      }
+      break;
+    case "split_abort":
+      handlers.onSplitAbort?.(payload.reason ?? "");
       break;
     case "meta":
       if (payload.provider_id && payload.model_name) {

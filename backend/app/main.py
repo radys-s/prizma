@@ -1,3 +1,5 @@
+import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -11,6 +13,28 @@ from app.config import check_public_mode, settings
 from app.db import init_db
 from app.models import auth as auth_models  # noqa: F401 - registers the auth tables
 
+# Uvicorn si nastaví jen svoje vlastní loggery; kořenový logger zůstane na
+# WARNING, a všechno, co aplikace posílá přes log.info(), zmizí. Týká se to
+# i řádku o povolených hostech níž — ten měl být jediným vodítkem při smyčce
+# 421 a v deploy logu se nikdy neobjevil. Loggerům uvicornu to nevadí: mají
+# vlastní handler a `propagate=False`, takže se řádky nezdvojí.
+#
+# `getLevelName` proto, že překlep v LOG_LEVEL by jinak shodil import celičké
+# aplikace — nastavení hlasitosti logu nesmí být důvod, proč server nenabootuje.
+_level = logging.getLevelName(os.getenv("LOG_LEVEL", "INFO").strip().upper())
+logging.basicConfig(
+    level=_level if isinstance(_level, int) else logging.INFO,
+    format="%(levelname)s:     %(name)s - %(message)s",
+)
+
+# litellm si tiskne vlastní obarvený řádek ke každému volání *a* pošle totéž
+# kořenovému loggeru. Jakmile kořen začne pouštět INFO, je z jedné odpovědi
+# osm řádků o tom, který model se právě volá, dvakrát. Varování a chyby
+# prochází dál — mizí jen ten duplík.
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+
+log = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -20,11 +44,33 @@ async def lifespan(app: FastAPI):
     # missing allowlist looks like "the site is down". Refusing to boot says
     # which one it is, once, in the deploy log.
     check_public_mode(settings)
+
+    if settings.public_mode:
+        # Named once, on purpose. A hostname mismatch makes every request 421 —
+        # the health check included — and the only clue in the log is
+        # "Neplatná adresa serveru" with no mention of what was expected.
+        log.info("Server odpovídá na: %s", ", ".join(settings.effective_allowed_hosts()))
+        if not settings.contact_url.strip():
+            # `websearch` uses it as the User-Agent contact for Wikipedia's
+            # API. Without it that leg is skipped and deep research quietly
+            # degrades to arXiv only, with no error anywhere.
+            log.warning("CONTACT_URL není nastavený — hledání ve Wikipedii bude vypnuté.")
+
     init_db()
     yield
 
 
-app = FastAPI(title="Prizma BYOK Router", lifespan=lifespan)
+# Swagger is a genuinely useful thing to have on a laptop and a genuinely
+# strange thing to publish: every route behind it needs a session, but an
+# anonymous visitor to a private single-user app should not be handed an
+# interactive map of its API. Off on the server, on locally.
+_docs = {} if not settings.public_mode else {
+    "docs_url": None,
+    "redoc_url": None,
+    "openapi_url": None,
+}
+
+app = FastAPI(title="Prizma BYOK Router", lifespan=lifespan, **_docs)
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,11 +1,11 @@
-import { Code, Globe, Lightbulb, RefreshCw, Wand2 } from "lucide-react";
+import { Code, Globe, Lightbulb, RefreshCw, Split, Wand2 } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
 import { randomTip } from "../lib/tips";
 import type { SearchMode } from "../lib/types";
 
 /**
- * Three prompts that demonstrate the product rather than fill the space.
+ * Four prompts that demonstrate the product rather than fill the space.
  *
  * Each one lands on a different capability *and* a different web mode, so the
  * first thing a new user sees is the router doing the thing the app is for.
@@ -13,12 +13,12 @@ import type { SearchMode } from "../lib/types";
  * the chip can promise "deep research" and be telling the truth.
  *
  * `title` and `prompt` are split on purpose: the card shows a short label so
- * three of them line up as equal tiles, but the click sends the full sentence,
- * which is what actually makes a decent prompt. Showing the whole sentence
- * made the three cards different heights and turned the row into confetti.
+ * the tiles line up equal, but the click sends the full sentence, which is
+ * what actually makes a decent prompt. Showing the whole sentence made the
+ * cards different heights and turned the row into confetti.
  *
- * `hue` picks a stop out of the prism spectrum. Three different colours across
- * the row are the product in one image: one prompt, several paths out.
+ * `hue` picks a stop out of the prism spectrum. Different colours across the
+ * grid are the product in one image: one prompt, several paths out.
  */
 const SUGGESTIONS: {
   icon: typeof Code;
@@ -51,6 +51,19 @@ const SUGGESTIONS: {
     tag: "kreativní",
     search: "off",
     hue: "var(--spectrum-2)",
+  },
+  // Schválně dost široké zadání na to, aby ho plánovač označil za `hard`.
+  // V režimu Pro a Max je to jediná ukázka rozdělení mezi víc modelů, kterou
+  // člověk uvidí, aniž by ji musel vymyslet sám.
+  {
+    icon: Split,
+    title: "Rozeber architekturu appky",
+    prompt:
+      "Rozeber architekturu chatovací aplikace s vlastním routerem: backend, " +
+      "datový model, bezpečnost a nasazení. U každé části uveď rizika.",
+    tag: "rozbor",
+    search: "off",
+    hue: "var(--spectrum-1)",
   },
 ];
 

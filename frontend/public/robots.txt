@@ -1,0 +1,4 @@
+# Prizma is a private, single-user app. There is nothing here to index, and the
+# login screen showing up in search results is a liability, not a feature.
+User-agent: *
+Disallow: /

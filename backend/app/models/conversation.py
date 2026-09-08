@@ -58,6 +58,17 @@ class Message(SQLModel, table=True):
     # `content`, so the order must never be rewritten after the fact.
     sources: Optional[str] = None
 
+    # JSON array of {"index", "title", "provider_id", "display_name", "model",
+    # "ok", "ms"} — the fan-out that produced this answer, or None when the
+    # task was never split. Text column for the same reason as `sources`:
+    # written once, read back whole with its message, never queried.
+    #
+    # Uložené poté, co byl rozpad původně jen živý. Živá verze zmizela s posledním
+    # tokenem, takže po reloadu nebylo poznat, jestli odpověď napsal jeden model,
+    # nebo čtyři — což je u funkce, která stojí tři až čtyři requesty z denní
+    # kvóty, ta jediná informace, kterou uživatel na výsledku nevidí.
+    parts: Optional[str] = None
+
     # What the answer cost, so the router's value is visible instead of
     # implied. `latency_ms` is wall clock from the first byte of the request to
     # the last token — search stage included, because that is the wait the user
