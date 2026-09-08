@@ -33,26 +33,22 @@ import litellm
 
 from app import settings_store
 from app.providers import keystore, model_health
+
+# Errors that mean "this provider is temporarily busy" — park it so the next
+# request doesn't queue behind it again — and errors that mean "this exact
+# model slug is gone", where the slug is parked and the provider is not.
+#
+# Both lists live in `providers/failures.py` since the fan-out in
+# `routing/decompose.py` turned out to need the same distinction and got it
+# wrong: it parked a slug for an hour over a timeout, and that mark is global.
+from app.providers.failures import COOLDOWN_ERRORS as _COOLDOWN_ERRORS
+from app.providers.failures import DEAD_MODEL_ERRORS as _DEAD_MODEL_ERRORS
 from app.providers.registry import ProviderModel, by_id
 from app.routing import decompose as decomposing
 from app.routing import plan as planning
 from app.routing import research as researching
 from app.routing import selector
 from app.routing.effort import EffortProfile
-
-# Errors that mean "this provider is temporarily busy" — park it so the next
-# request doesn't queue behind it again.
-_COOLDOWN_ERRORS = (
-    litellm.RateLimitError,
-    litellm.APIConnectionError,
-    litellm.Timeout,
-    litellm.ServiceUnavailableError,
-    litellm.InternalServerError,
-)
-
-# Errors that mean "this exact model slug is gone" — park the slug, not the
-# provider, and move to the next candidate.
-_DEAD_MODEL_ERRORS = (litellm.NotFoundError,)
 
 _STREAM_TIMEOUT = 60
 _REVIEW_TIMEOUT = 90

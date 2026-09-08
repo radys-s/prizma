@@ -28,6 +28,9 @@ from app.routing import selector
 log = logging.getLogger(__name__)
 
 MAX_CHARS = 48
+# Prompt žádá nejvýš šest slov. Deset je rezerva pro model, který se netrefí —
+# a zároveň hranice, za kterou už řádek není název, ale věta.
+MAX_WORDS = 10
 _TIMEOUT = 15
 _MAX_TOKENS = 40
 _INPUT_CHARS = 1500
@@ -43,13 +46,50 @@ _SYSTEM = (
 _STRIP = re.compile(r'^["\'`*_\s]+|["\'`*_\s.]+$')
 _PREFIX = re.compile(r"^(název|nazev|title|téma|tema)\s*[:\-–]\s*", re.IGNORECASE)
 
+# Reasoning modely nahlas přemýšlejí, než odpoví. Některé to zabalí do
+# <think>…</think>, jiné prostě začnou mluvit. Neuzavřený blok je taky případ,
+# který se stane — když dojdou tokeny (`_MAX_TOKENS` je 40), uzavírací značka
+# nedorazí a zbytek odpovědi je jen přemýšlení.
+_THINK = re.compile(r"<think>.*?(?:</think>|$)", re.IGNORECASE | re.DOTALL)
+
+
+def _looks_like_a_title(line: str) -> bool:
+    """Jméno, ne věta o pojmenovávání."""
+    if not line or line.endswith(":"):
+        return False
+    return len(line.split()) <= MAX_WORDS and len(line) <= MAX_CHARS * 2
+
+
+def _shorten(line: str) -> str:
+    """Ořez na `MAX_CHARS`, ale ne uprostřed slova."""
+    if len(line) <= MAX_CHARS:
+        return line
+    cut = line[:MAX_CHARS].rstrip()
+    space = cut.rfind(" ")
+    return (cut[:space] if space > MAX_CHARS // 2 else cut).rstrip(" ,;:-–")
+
 
 def _clean(raw: str) -> str:
-    line = (raw or "").strip().splitlines()[0] if raw.strip() else ""
-    line = _STRIP.sub("", line)
-    line = _PREFIX.sub("", line).strip()
-    line = _STRIP.sub("", line)
-    return line[:MAX_CHARS].strip()
+    """Název schovaný v odpovědi modelu, nebo "" když tam žádný není.
+
+    Dřív se bralo natvrdo první slovo první řádky. U reasoning modelu je první
+    řádka jeho přemýšlení, takže v postranním panelu skončilo vlákno pojmenované
+    „We need to respond with a short title, m…“ — useknutá věta o tom, že se má
+    vymyslet název. Ořez na 48 znaků to jen schoval; text se tím nestal názvem.
+
+    Proto se hledá *první řádka, která vypadá jako název*: přemýšlení se přeskočí
+    (je moc dlouhé), a když nevypadá jako název ani jedna, vrátí se prázdný
+    řetězec. To `suggest` pošle na dalšího providera a v nejhorším případě zůstane
+    původní název podle otázky — což je pořád lepší než odstavec v seznamu.
+    """
+    text = _THINK.sub("", raw or "")
+    for line in text.splitlines():
+        candidate = _STRIP.sub("", line.strip())
+        candidate = _PREFIX.sub("", candidate).strip()
+        candidate = _STRIP.sub("", candidate)
+        if _looks_like_a_title(candidate):
+            return _shorten(candidate)
+    return ""
 
 
 async def suggest(question: str, answer: str) -> str:
@@ -93,13 +133,22 @@ async def autoname(conversation_id: int, question: str, answer: str) -> None:
     title = await suggest(question, answer)
     if not title:
         return
-    with Session(engine) as session:
-        conversation = session.get(Conversation, conversation_id)
-        if conversation is None or conversation.title != _placeholder(question):
-            return  # renamed by hand while we were thinking — theirs wins
-        conversation.title = title
-        session.add(conversation)
-        session.commit()
+    # `suggest` už nikdy nevyhodí výjimku, ale zápis do databáze ano — zamčená
+    # SQLite, spadlé spojení do Postgresu. Tenhle korutin běží jako
+    # fire-and-forget task z `chat.py`, takže by se výjimka neobjevila v žádném
+    # requestu: asyncio ji vypíše až při úklidu tasku, jako „Task exception was
+    # never retrieved“, klidně o minuty později a bez souvislosti s odpovědí.
+    # Modul slibuje v docstringu, že nikdy nevyhodí výjimku — tady to platí.
+    try:
+        with Session(engine) as session:
+            conversation = session.get(Conversation, conversation_id)
+            if conversation is None or conversation.title != _placeholder(question):
+                return  # renamed by hand while we were thinking — theirs wins
+            conversation.title = title
+            session.add(conversation)
+            session.commit()
+    except Exception as exc:  # noqa: BLE001 - a name is never worth an error
+        log.warning("uložení názvu konverzace %s selhalo: %s", conversation_id, exc)
 
 
 def _placeholder(question: str) -> str:

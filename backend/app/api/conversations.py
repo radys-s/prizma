@@ -183,7 +183,11 @@ def get_conversation(conversation_id: int, session: Session = Depends(get_sessio
     messages = session.exec(
         select(Message)
         .where(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at)
+        # `id` je tu jako rozhodčí, ne pro parádu: dvě zprávy zapsané ve stejné
+        # mikrosekundě (odmítnutí, které přijde hned po otázce) měly bez něj
+        # nedefinované pořadí, takže se konverzace po reloadu mohla vykreslit
+        # s odpovědí nad dotazem. `chat.py` i fulltext hledání ho už měly.
+        .order_by(Message.created_at, Message.id)
     ).all()
     return {
         "conversation": _conversation(conversation),
