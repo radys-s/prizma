@@ -49,6 +49,7 @@ from app.routing import plan as planning
 from app.routing import research as researching
 from app.routing import selector
 from app.routing.effort import EffortProfile
+from app.tools import registry as tooling
 
 _STREAM_TIMEOUT = 60
 _REVIEW_TIMEOUT = 90
@@ -60,6 +61,9 @@ log = logging.getLogger(__name__)
 class StreamEvent:
     # "meta"        provider + model chosen, answer is about to start
     # "delta"       a chunk of answer text
+    # "tool_call"   the model asked for a local tool; `tool` is its name and
+    #               `content` the one-line summary the UI shows
+    # "tool_result" that tool finished; `tool_ok` says whether it was allowed
     # "review_start" the draft is done; a revised version is about to stream
     #                in its place (max tier only)
     # "review_abort" the revision failed; the draft the user already sees stands
@@ -75,6 +79,9 @@ class StreamEvent:
     # none. Plenty of free-tier endpoints omit usage on a stream entirely, so
     # this is a bonus number and never something the UI may depend on.
     tokens: int = 0
+    # Local tool events only: which tool, and whether it was allowed to run.
+    tool: str = ""
+    tool_ok: bool = True
 
 
 @dataclass
@@ -87,6 +94,18 @@ class Attempt:
 def _short(provider: ProviderModel) -> str:
     """Display name without the model in parentheses — for one-line notes."""
     return provider.display_name.split(" (")[0]
+
+
+def _meta(
+    provider: ProviderModel, model: str, pinned: ProviderModel | None
+) -> StreamEvent:
+    """The "this model is answering" event, with the substitution note if any."""
+    note = ""
+    if pinned is not None and provider.id != pinned.id:
+        note = f"{_short(pinned)} nedostupný, odpověděl {_short(provider)}"
+    return StreamEvent(
+        type="meta", provider_id=provider.id, model_name=model, note=note
+    )
 
 
 def _humanize(attempt: Attempt) -> str:
@@ -155,12 +174,36 @@ def _collect_usage(chunk, usage: dict) -> None:
 
 
 
+def _accumulate_tool_calls(fragments, sink: dict[int, dict]) -> None:
+    """Skládá volání nástroje z fragmentů streamu.
+
+    Volání nechodí najednou. Provider posílá `index`, pak `id` a jméno funkce,
+    a pak argumenty po kouscích — u delšího JSONu klidně po jednom znaku. Sink
+    je proto slovník podle indexu a argumenty se zřetězují; teprve na konci
+    streamu je z toho platný JSON.
+    """
+    for fragment in fragments or ():
+        index = getattr(fragment, "index", 0) or 0
+        slot = sink.setdefault(index, {"id": "", "name": "", "arguments": ""})
+        if getattr(fragment, "id", None):
+            slot["id"] = fragment.id
+        function = getattr(fragment, "function", None)
+        if function is None:
+            continue
+        if getattr(function, "name", None):
+            slot["name"] = function.name
+        if getattr(function, "arguments", None):
+            slot["arguments"] += function.arguments
+
+
 async def _try_stream(
     provider: ProviderModel,
     model: str,
     messages: list[dict],
     profile: EffortProfile,
     usage: dict,
+    tools: list[dict] | None = None,
+    calls: dict[int, dict] | None = None,
 ) -> AsyncIterator[str]:
     response = await litellm.acompletion(
         model=model,
@@ -168,6 +211,11 @@ async def _try_stream(
         messages=messages,
         stream=True,
         timeout=_STREAM_TIMEOUT,
+        # Mimo `_supported_kwargs`: ten se ptá litellm, co slug umí, a u nástrojů
+        # se to rozhoduje o úroveň výš (`_tools_for`) — tady už je jisté, že
+        # model volání funkcí umí, a vynechat je by znamenalo tichou ztrátu
+        # celé schopnosti.
+        **({"tools": tools, "tool_choice": "auto"} if tools else {}),
         **_supported_kwargs(
             model,
             reasoning_effort=profile.reasoning_effort,
@@ -180,9 +228,13 @@ async def _try_stream(
     )
     async for chunk in response:
         _collect_usage(chunk, usage)
-        delta = chunk.choices[0].delta.content if chunk.choices else None
-        if delta:
-            yield delta
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+        if calls is not None:
+            _accumulate_tool_calls(getattr(delta, "tool_calls", None), calls)
+        if delta.content:
+            yield delta.content
 
 
 _REVIEW_SYSTEM = (
@@ -310,6 +362,47 @@ def _custom_instructions() -> dict | None:
     }
 
 
+# Kolik kol nástrojů smí jedna odpověď spotřebovat. Šest stačí na „vypiš složku,
+# přečti dva soubory, spusť testy, oprav to" a zároveň je to strop pro model,
+# který se zacyklí na čtení téhož souboru dokola — což se na free tieru stává
+# a bez stropu by to znamenalo požadavek běžící, dokud si toho někdo nevšimne.
+MAX_TOOL_ROUNDS = 6
+
+# Kontext k nástrojům. Bez něj model hádá — píše relativní cesty, které nemá
+# k čemu vztáhnout, a ptá se na svolení, které už dostal.
+_TOOLS_SYSTEM = (
+    "Máš přístup k počítači uživatele (Windows) přes nástroje. Používej je, "
+    "když se odpověď dá ověřit místo odhadu — přečti soubor, o kterém je řeč, "
+    "než o něm začneš mluvit.\n\n"
+    "Cesty piš vždy absolutní. Když nevíš, kde soubor je, najdi ho "
+    "(`search_text` nebo `list_dir`), nehádej.\n\n"
+    "Nekomentuj, co se chystáš udělat — zavolej nástroj. Až budeš mít výsledky, "
+    "odpověz na původní otázku a opři se o to, cos viděl, ne o obecné znalosti.\n\n"
+    "Když nástroj vrátí „Odmítnuto“, je to hranice nastavená uživatelem. "
+    "Nezkoušej ji obejít jinou cestou; napiš, co bys potřeboval."
+)
+
+_TOOLS_MESSAGE: dict = {"role": "system", "content": _TOOLS_SYSTEM}
+
+
+def _tools_for(model: str, tools: list[dict]) -> list[dict] | None:
+    """Nástroje pro tenhle slug, nebo None, když je neumí.
+
+    Poslat `tools` modelu, který volání funkcí nepodporuje, končí u části
+    providerů chybou 400 a u zbytku tím, že se pole tiše zahodí. První případ
+    by kvůli zapnutému nastavení shodil odpověď na modelu, který by jinak
+    odpověděl v pohodě — proto se to ptá dopředu.
+    """
+    if not tools:
+        return None
+    try:
+        if not litellm.supports_function_calling(model=model):
+            return None
+    except Exception:  # noqa: BLE001 - neznámý slug: radši bez nástrojů
+        return None
+    return tools
+
+
 async def stream_chat(
     messages: list[dict],
     plan: planning.Plan,
@@ -317,6 +410,7 @@ async def stream_chat(
     pinned: str | None = None,
     findings: researching.Findings | None = None,
     breakdown: decomposing.Breakdown | None = None,
+    allow_commands: bool = False,
 ) -> AsyncIterator[StreamEvent]:
     providers = selector.candidates(plan.capability, plan.complexity, pinned=pinned)
     if not providers:
@@ -338,11 +432,13 @@ async def stream_chat(
     # The user's own message stays exactly as they typed it, always; see the
     # docstrings of routing/plan.py, routing/research.py and
     # routing/decompose.py.
+    tools = tooling.specs(allow_commands=allow_commands)
     preamble = [
         m
         for m in (
             _HOUSE_MESSAGE,
             _custom_instructions(),
+            _TOOLS_MESSAGE if tools else None,
             planning.system_message(plan),
             researching.system_message(findings) if findings else None,
             decomposing.system_message(breakdown) if breakdown else None,
@@ -363,26 +459,108 @@ async def stream_chat(
             started = False
             draft = ""
             try:
-                async for delta in _try_stream(provider, model, outgoing, profile, usage):
-                    if not started:
-                        # Announce the model only once it has actually produced
-                        # output, so the UI never labels an answer with a model
-                        # that turned out to be dead.
-                        started = True
-                        note = ""
-                        if pinned_provider is not None and provider.id != pinned_provider.id:
-                            note = (
-                                f"{_short(pinned_provider)} nedostupný, "
-                                f"odpověděl {_short(provider)}"
-                            )
+                usable_tools = _tools_for(model, tools)
+                # Vlastní kopie historie: do ní přibývají volání nástrojů a
+                # jejich výsledky. `outgoing` musí zůstat nedotčené, aby další
+                # model v řadě začínal od původní konverzace, ne od půlky
+                # rozdělaného nástrojového dialogu předchozího modelu.
+                history = list(outgoing)
+
+                for round_number in range(MAX_TOOL_ROUNDS + 1):
+                    calls: dict[int, dict] = {}
+                    round_text = ""
+                    async for delta in _try_stream(
+                        provider,
+                        model,
+                        history,
+                        profile,
+                        usage,
+                        tools=usable_tools,
+                        calls=calls if usable_tools else None,
+                    ):
+                        if not started:
+                            # Announce the model only once it has actually
+                            # produced output, so the UI never labels an answer
+                            # with a model that turned out to be dead.
+                            started = True
+                            yield _meta(provider, model, pinned_provider)
+                        round_text += delta
+                        draft += delta
                         yield StreamEvent(
-                            type="meta",
-                            provider_id=provider.id,
-                            model_name=model,
-                            note=note,
+                            type="delta", provider_id=provider.id, content=delta
                         )
-                    draft += delta
-                    yield StreamEvent(type="delta", provider_id=provider.id, content=delta)
+
+                    if not calls:
+                        break
+
+                    # Volání bez jediného tokenu textu je běžné — model rovnou
+                    # sáhne po nástroji. Meta se tedy musí poslat i tady, jinak
+                    # by UI ukazovalo nástroje pod hlavičkou předchozí odpovědi.
+                    if not started:
+                        started = True
+                        yield _meta(provider, model, pinned_provider)
+
+                    if round_number == MAX_TOOL_ROUNDS:
+                        # Došla kola. Modelu se to řekne jako výsledek, ne
+                        # mlčením: dostane ještě jedno kolo bez nástrojů, ve
+                        # kterém má odpovědět z toho, co už zjistil.
+                        history.append(
+                            {
+                                "role": "system",
+                                "content": (
+                                    "Vyčerpal jsi limit volání nástrojů. "
+                                    "Odpověz z toho, co už víš."
+                                ),
+                            }
+                        )
+                        usable_tools = None
+                        continue
+
+                    ordered = [calls[i] for i in sorted(calls)]
+                    history.append(
+                        {
+                            "role": "assistant",
+                            "content": round_text,
+                            "tool_calls": [
+                                {
+                                    "id": call["id"] or f"call_{index}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": call["name"],
+                                        "arguments": call["arguments"] or "{}",
+                                    },
+                                }
+                                for index, call in enumerate(ordered)
+                            ],
+                        }
+                    )
+                    for index, call in enumerate(ordered):
+                        yield StreamEvent(
+                            type="tool_call",
+                            provider_id=provider.id,
+                            tool=call["name"],
+                            content=tooling.summarize(call["name"], call["arguments"]),
+                        )
+                        result = await tooling.run(
+                            call["name"],
+                            call["arguments"],
+                            allow_commands=allow_commands,
+                        )
+                        yield StreamEvent(
+                            type="tool_result",
+                            provider_id=provider.id,
+                            tool=call["name"],
+                            tool_ok=not result.startswith("Odmítnuto:"),
+                            content=result[:400],
+                        )
+                        history.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": call["id"] or f"call_{index}",
+                                "name": call["name"],
+                                "content": result,
+                            }
+                        )
 
                 if not started:
                     # Clean finish with zero content — treat as a failed attempt

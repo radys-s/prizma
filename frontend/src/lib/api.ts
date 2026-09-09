@@ -295,8 +295,11 @@ export async function fetchSettings(): Promise<AppSettings> {
   return res.json();
 }
 
-/** What the dialog may change. `custom_instructions_max` is server-owned. */
-export type SettingsPatch = Partial<Omit<AppSettings, "custom_instructions_max">>;
+/** What the dialog may change. The omitted three are server-owned: a cap, a
+ *  resolved path list and a deployment fact, none of which the browser decides. */
+export type SettingsPatch = Partial<
+  Omit<AppSettings, "custom_instructions_max" | "tools_roots_effective" | "tools_supported">
+>;
 
 export async function saveSettings(patch: SettingsPatch): Promise<AppSettings> {
   const res = await write("/api/settings", "PUT", patch);
@@ -423,6 +426,10 @@ export interface StreamHandlers {
   onPartDone?: (part: TaskPart) => void;
   /** No split happened — the answer is written the ordinary way. */
   onSplitAbort?: (reason: string) => void;
+  /** The model reached for a local tool. `detail` is the one-line summary. */
+  onToolCall?: (tool: string, detail: string) => void;
+  /** That tool finished. `ok` false means the sandbox refused it. */
+  onToolResult?: (tool: string, ok: boolean, preview: string) => void;
   /** `note` is set when a pinned provider had to be swapped out. */
   onMeta?: (providerId: string, modelName: string, note: string) => void;
   onDelta?: (content: string) => void;
@@ -449,6 +456,15 @@ export interface RoutingChoice {
   effort: string;
   /** Globe control: "auto" | "web" | "deep" | "off". */
   search: string;
+  /**
+   * May the model run a program on this machine for this message?
+   *
+   * Per message rather than a stored setting: reading files is a decision made
+   * once, running a build or a test suite is one the user makes when they are
+   * expecting it. The backend re-checks it — the flag is a request, not a
+   * permission.
+   */
+  allow_commands: boolean;
 }
 
 export function streamChat(
@@ -613,6 +629,8 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
     folded?: number;
     kept?: number;
     fallback?: boolean;
+    tool?: string;
+    tool_ok?: boolean;
   };
   try {
     payload = JSON.parse(data);
@@ -673,6 +691,12 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
       break;
     case "split_abort":
       handlers.onSplitAbort?.(payload.reason ?? "");
+      break;
+    case "tool_call":
+      handlers.onToolCall?.(payload.tool ?? "", payload.content ?? "");
+      break;
+    case "tool_result":
+      handlers.onToolResult?.(payload.tool ?? "", payload.tool_ok !== false, payload.content ?? "");
       break;
     case "meta":
       if (payload.provider_id && payload.model_name) {

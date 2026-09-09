@@ -146,6 +146,22 @@ export interface TaskPart {
   ms?: number;
 }
 
+/** One reach for a local tool, as the answer rail shows it.
+ *
+ *  Live-only on purpose: the *answer* is what gets stored, and a list of files
+ *  the model opened is a record of this machine's contents — it belongs in the
+ *  stream the user is watching, not in a row that survives the session. */
+export interface ToolStep {
+  /** Ordinal within this answer. Also the React key: names repeat. */
+  index: number;
+  /** Backend tool name, e.g. `read_file`. */
+  name: string;
+  /** One-line summary of the arguments, e.g. `read_file C:\…\api.ts`. */
+  detail: string;
+  /** Undefined while it runs; false when the sandbox refused it. */
+  ok?: boolean;
+}
+
 /** Globe control — mirrors `research.MODES` on the backend. */
 export type SearchMode = "auto" | "web" | "deep" | "off";
 
@@ -194,6 +210,9 @@ export interface Message {
   reading?: string[] | null;
   /** Live-only: what auto-compact folded away before this answer ran. */
   compact?: CompactInfo | null;
+
+  /** Live-only: local tools this answer reached for, in the order it did. */
+  tools?: ToolStep[] | null;
 
   /** The subtasks a hard task was split into, in order. Written live by the
    *  stream and read back from the row on a reload. */
@@ -284,4 +303,27 @@ export interface AppSettings {
   custom_instructions: string;
   /** Server-owned cap, so the counter in the dialog can't drift from it. */
   custom_instructions_max: number;
+
+  /** May the model look at this computer at all? Off by default, and the
+   *  backend re-checks it on every call — this is a mirror, not the truth. */
+  local_tools: boolean;
+  /** Whether writing a file is allowed on top of reading one. */
+  local_write: boolean;
+  /** Folders the model may see into, one absolute path per line. Empty means
+   *  "use the default", which is `tools_roots_effective`. */
+  tools_roots: string;
+  /** What the backend actually resolved `tools_roots` to, default included.
+   *  The dialog shows it as the placeholder, so an empty box never reads as
+   *  "nowhere" when it really means "the default folder". */
+  tools_roots_effective: string[];
+  /** False on a public server, where a tool that reads the disk and runs
+   *  programs would be a remote shell. The section then says so rather than
+   *  quietly not existing. */
+  tools_supported: boolean;
 }
+
+/** The slice of `AppSettings` the tools section owns. */
+export type ToolsSettings = Pick<
+  AppSettings,
+  "local_tools" | "local_write" | "tools_roots" | "tools_roots_effective" | "tools_supported"
+>;

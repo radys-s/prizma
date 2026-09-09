@@ -8,6 +8,9 @@ import {
   KeyRound,
   Loader,
   MessageSquareQuote,
+  FolderTree,
+  HardDrive,
+  PencilLine,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -19,7 +22,7 @@ import {
   saveSettings,
   testProviderKey,
 } from "../lib/api";
-import type { AuthState, Provider } from "../lib/types";
+import type { AuthState, Provider, ToolsSettings } from "../lib/types";
 import { AccountSection } from "./AccountSection";
 import { LocalModelSection } from "./LocalModelSection";
 import { ProviderMark } from "./ProviderMark";
@@ -95,6 +98,9 @@ interface Props {
   customInstructions: string;
   customInstructionsMax: number;
   onCustomInstructionsChange: (value: string) => void;
+  /** Whether the model may look at this computer, and where. */
+  tools: ToolsSettings;
+  onToolsChange: (next: ToolsSettings) => void;
   onClose: () => void;
   onChanged: () => Promise<void> | void;
   /** Null while the auth state is still loading; the account section waits. */
@@ -110,6 +116,8 @@ export function ProvidersModal({
   customInstructions,
   customInstructionsMax,
   onCustomInstructionsChange,
+  tools,
+  onToolsChange,
   onClose,
   onChanged,
   auth,
@@ -128,6 +136,9 @@ export function ProvidersModal({
   // to the settings table for every character of a 2 000-character prompt.
   const [instructions, setInstructions] = useState(customInstructions);
   const [instructionsState, setInstructionsState] = useState<Result | null>(null);
+  // Same blur-to-save shape as the instructions box, for the same reason.
+  const [roots, setRoots] = useState(tools.tools_roots);
+  const [toolsState, setToolsState] = useState<Result | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -229,6 +240,80 @@ export function ProvidersModal({
     } catch (err) {
       onReadPagesChange(!next);
       setReadError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  /**
+   * One writer for all three tool settings.
+   *
+   * Optimistic like the read-pages switch, and reconciled the same way — but
+   * here the reconciliation is the point rather than a nicety: the server also
+   * answers with `tools_roots_effective`, so turning the layer on immediately
+   * shows *which folders* it just opened up instead of leaving the user to
+   * guess what the default is.
+   */
+  const patchTools = async (patch: Partial<ToolsSettings>, optimistic: ToolsSettings) => {
+    onToolsChange(optimistic);
+    setToolsState(null);
+    try {
+      const saved = await saveSettings(patch);
+      onToolsChange({
+        local_tools: saved.local_tools,
+        local_write: saved.local_write,
+        tools_roots: saved.tools_roots,
+        tools_roots_effective: saved.tools_roots_effective,
+        tools_supported: saved.tools_supported,
+      });
+      setRoots(saved.tools_roots);
+      return saved;
+    } catch (err) {
+      onToolsChange(tools); // put the switch back where the server left it
+      setToolsState({ kind: "err", text: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
+  };
+
+  const toggleLocalTools = async () => {
+    const next = !tools.local_tools;
+    // Reading is the prerequisite for writing, so switching the layer off has
+    // to take the write permission with it — a stored `local_write: true` that
+    // only sleeps until someone flips the first switch back on is a surprise.
+    const write = next ? tools.local_write : false;
+    const saved = await patchTools(
+      { local_tools: next, local_write: write },
+      { ...tools, local_tools: next, local_write: write }
+    );
+    if (saved) {
+      setToolsState({
+        kind: next ? "warn" : "ok",
+        text: next
+          ? "Zapnuto. Model teď může číst soubory v povolených složkách — a jejich obsah odchází poskytovateli modelu."
+          : "Vypnuto. Model se na disk nedostane.",
+      });
+    }
+  };
+
+  const toggleLocalWrite = async () => {
+    const next = !tools.local_write;
+    const saved = await patchTools({ local_write: next }, { ...tools, local_write: next });
+    if (saved) {
+      setToolsState({
+        kind: next ? "warn" : "ok",
+        text: next ? "Model teď smí soubory i přepisovat." : "Zápis vypnutý, zůstalo jen čtení.",
+      });
+    }
+  };
+
+  const saveRoots = async () => {
+    if (roots === tools.tools_roots) return;
+    const saved = await patchTools({ tools_roots: roots }, { ...tools, tools_roots: roots });
+    if (saved) {
+      setToolsState({
+        kind: "ok",
+        text: saved.tools_roots_effective.length
+          ? `Uloženo. Model vidí do: ${saved.tools_roots_effective.join(", ")}`
+          : "Uloženo.",
+      });
     }
   };
 
@@ -349,6 +434,133 @@ export function ProvidersModal({
                   <CircleX size={14} />
                 )}
                 <span>{instructionsState.text}</span>
+              </div>
+            )}
+          </section>
+
+          <section className="settings-section">
+            <h3>Přístup k počítači</h3>
+
+            {!tools.tools_supported ? (
+              <div className="setting-row">
+                <HardDrive size={16} className="setting-icon" />
+                <div className="setting-text">
+                  <p className="setting-label">Na tomhle serveru není k dispozici</p>
+                  <p className="setting-help">
+                    Nástroj, který čte disk a spouští programy, by na veřejné adrese byl
+                    vzdálený shell. Přepínače se proto objeví jen v běhu na tvém počítači.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="setting-row">
+                  <HardDrive size={16} className="setting-icon" />
+                  <div className="setting-text">
+                    <p className="setting-label">Nechat model číst soubory</p>
+                    <p className="setting-help">
+                      Model dostane nástroje na výpis složky, čtení souboru a hledání v textu —
+                      jen uvnitř složek níž. <strong>Co přečte, odejde poskytovateli modelu</strong>,
+                      protože odpovídá cizí model v cloudu; klíče, <code>.env</code>,{" "}
+                      <code>.git</code> a databáze jsou proto zakázané natvrdo a přepínač je
+                      neodemyká.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={tools.local_tools}
+                    className="switch"
+                    onClick={toggleLocalTools}
+                    aria-label="Nechat model číst soubory na tomhle počítači"
+                  >
+                    <span className="switch-thumb" />
+                  </button>
+                </div>
+
+                <div className="setting-row">
+                  <PencilLine size={16} className="setting-icon" />
+                  <div className="setting-text">
+                    <p className="setting-label">Povolit i zápis do souborů</p>
+                    <p className="setting-help">
+                      Bez tohohle model soubory jen čte. Zapisovat smí zase jen do povolených
+                      složek — a přepisuje celý soubor, takže se to hodí na nový soubor víc než
+                      na drobnou úpravu v existujícím.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={tools.local_write}
+                    className="switch"
+                    onClick={toggleLocalWrite}
+                    disabled={!tools.local_tools}
+                    aria-label="Povolit modelu zápis do souborů"
+                  >
+                    <span className="switch-thumb" />
+                  </button>
+                </div>
+
+                <div className="setting-row column">
+                  <div className="setting-head">
+                    <FolderTree size={16} className="setting-icon" />
+                    <div className="setting-text">
+                      <p className="setting-label">Do kterých složek smí vidět</p>
+                      <p className="setting-help">
+                        Jedna absolutní cesta na řádek. Všechno mimo ně model neuvidí ani přes{" "}
+                        <code>..</code> — cesta se nejdřív rozbalí a teprve pak porovná.
+                        Prázdné pole znamená výchozí složku uvedenou v poli níž.
+                      </p>
+                    </div>
+                  </div>
+
+                  <textarea
+                    className="instructions-input"
+                    value={roots}
+                    onChange={(e) => {
+                      setRoots(e.target.value);
+                      setToolsState(null);
+                    }}
+                    onBlur={saveRoots}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.stopPropagation();
+                        setRoots(tools.tools_roots);
+                        setToolsState(null);
+                      }
+                    }}
+                    rows={3}
+                    spellCheck={false}
+                    disabled={!tools.local_tools}
+                    placeholder={
+                      tools.tools_roots_effective.join("\n") ||
+                      "C:\\Users\\…\\Desktop\\Projekty"
+                    }
+                    aria-label="Složky, do kterých má model přístup"
+                  />
+                </div>
+
+                <div className="setting-row">
+                  <MessageSquareQuote size={16} className="setting-icon" />
+                  <div className="setting-text">
+                    <p className="setting-label">Spouštění příkazů se povoluje u zprávy</p>
+                    <p className="setting-help">
+                      Tady se zapíná jen čtení a zápis. <strong>Příkazy</strong> (git, python,
+                      npm, pytest, ruff, node) povoluje tlačítko „Příkazy“ vedle výběru modelu, a
+                      platí vždy jen pro jednu zprávu — spustit build je rozhodnutí, které dává
+                      smysl dělat ve chvíli, kdy ho čekáš, ne jednou provždy v nastavení.
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {toolsState && (
+              <div className={`provider-result ${toolsState.kind}`}>
+                {toolsState.kind === "ok" && <CircleCheck size={14} />}
+                {toolsState.kind === "warn" && <TriangleAlert size={14} />}
+                {toolsState.kind === "err" && <CircleX size={14} />}
+                <span>{toolsState.text}</span>
               </div>
             )}
           </section>

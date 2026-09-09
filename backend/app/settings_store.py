@@ -32,9 +32,24 @@ CUSTOM_INSTRUCTIONS = "chat.custom_instructions"
 # `routing/compact.py` is working to protect.
 CUSTOM_INSTRUCTIONS_MAX = 2000
 
+# Smí model sahat na disk tohohle počítače (čtení: výpis složky, čtení souboru,
+# hledání v textu). Výchozí vypnuto, a to i když je aplikace jen na localhostu:
+# každý přečtený soubor odejde providerovi, a to má být rozhodnutí, ne výchozí
+# stav. Co přesně smí, řeší `tools/sandbox.py`.
+LOCAL_TOOLS = "tools.local"
+
+# Smí i zapisovat. Podřízené předchozímu — bez čtení nemá zápis smysl a
+# `tools/registry.py` ho v tom případě ani nenabídne.
+LOCAL_WRITE = "tools.write"
+
+# Složky, ve kterých se agent smí pohybovat; jedna na řádek. Prázdné znamená
+# výchozí kořen z `tools/sandbox.py`.
+TOOLS_ROOTS = "tools.roots"
+TOOLS_ROOTS_MAX = 1000
+
 # Only booleans belong here: `all_bools()` iterates it, and a text default
 # would come back as `False`.
-DEFAULTS: dict[str, str] = {READ_PAGES: "1"}
+DEFAULTS: dict[str, str] = {READ_PAGES: "1", LOCAL_TOOLS: "0", LOCAL_WRITE: "0"}
 
 _cache: dict[str, str] = {}
 
