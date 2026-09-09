@@ -40,6 +40,21 @@ class Settings(BaseSettings):
     # never the only layer; it was the outermost one.
     public_mode: bool = False
 
+    # Pootevře lokální režim telefonu ve stejné Wi-Fi — a nic víc.
+    #
+    # V lokálním režimu pouští `auth/guard.py` jen požadavky z loopbacku, takže
+    # telefon dostane 403 dřív, než se stihne zeptat na kód. To je záměr: appka
+    # na notebooku nemá důvod poslouchat síť. Jenže než bude deploy, je tohle
+    # jediný způsob, jak si mobilní vzhled prohlédnout na skutečném telefonu.
+    #
+    # Proto výjimka, ale co nejtěsnější: povolí navíc jen peery z privátních
+    # rozsahů (RFC 1918 a spol.), je vypnutá, dokud ji někdo výslovně nezapne,
+    # a se `public_mode` se nesmí potkat — tam by nedávala smysl a jen by
+    # rozšiřovala plochu. Chrání to pořád jen přístupový kód a jeho throttle,
+    # takže se to zapíná na dobu koukání, ne natrvalo. Používá to
+    # `mobile/lan-preview.ps1`, který běží v popředí a končí Ctrl+C.
+    lan_preview: bool = False
+
     # Empty -> SQLite at `db_path`, exactly as before. Set -> that URL wins.
     # Neon wants `postgresql+psycopg://user:pass@host/db?sslmode=require`.
     database_url: str = ""
@@ -178,6 +193,11 @@ def check_public_mode(current: Settings) -> None:
         problems.append(
             "OWNER_EMAIL je prázdný — účet by si mohl nárokovat kdokoli, kdo najde adresu."
         )
+    if current.lan_preview:
+        # Na serveru nemá co dělat: peer check tam stejně nejede, takže by to
+        # nic nepovolilo — jen by v konfiguraci stálo napsané, že se něco
+        # otevírá. Radši ať to nenaběhne, než aby to někdo četl jako záruku.
+        problems.append("LAN_PREVIEW je zapnutý — ten patří jen k lokálnímu náhledu.")
     if problems:
         raise ConfigError("PUBLIC_MODE=1, ale: " + " ".join(problems))
 

@@ -27,6 +27,7 @@ caller is the SPA and browsers always send one.
 """
 
 import hmac
+import ipaddress
 
 from fastapi import Depends, HTTPException, Request
 from sqlmodel import Session
@@ -69,6 +70,30 @@ def _is_own_origin(request: Request, origin: str) -> bool:
     return origin in {f"http://{host}", f"https://{host}"}
 
 
+def _is_lan_preview_peer(client_host: str | None) -> bool:
+    """Whether this peer is a device on the local network, during a LAN preview.
+
+    Off unless `LAN_PREVIEW` is set, which only `mobile/lan-preview.ps1` does —
+    see the comment on the setting for why the hole exists at all. The point of
+    doing it here rather than widening `LOOPBACK_HOSTS` is that the widening
+    stays visible: one named function, one flag, and a range check that cannot
+    accidentally admit a public address.
+
+    Parsed as an address rather than string-matched on `192.168.`: `is_private`
+    covers 10/8 and 172.16/12 too, and link-local IPv6 (`fe80::`) is how a
+    phone on modern Wi-Fi often shows up. Anything unparseable is refused,
+    because a hostname here would mean something upstream is rewriting the
+    peer and the answer is then not knowable.
+    """
+    if not settings.lan_preview or not client_host:
+        return False
+    try:
+        addr = ipaddress.ip_address(client_host)
+    except ValueError:
+        return False
+    return addr.is_private and not addr.is_loopback
+
+
 def enforce_origin(request: Request) -> None:
     """Layers 1 and 2. Raises HTTPException, never returns a value."""
     allowed = settings.allowed_origins()
@@ -76,7 +101,7 @@ def enforce_origin(request: Request) -> None:
 
     if not settings.public_mode:
         client_host = request.client.host if request.client else None
-        if client_host not in LOOPBACK_HOSTS:
+        if client_host not in LOOPBACK_HOSTS and not _is_lan_preview_peer(client_host):
             raise HTTPException(status_code=403, detail="Povoleno jen z tohoto počítače.")
         if origin is not None and origin not in allowed and not _is_own_origin(request, origin):
             raise HTTPException(status_code=403, detail="Nepovolený Origin.")
