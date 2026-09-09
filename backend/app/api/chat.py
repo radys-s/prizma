@@ -61,6 +61,10 @@ class ChatRequest(BaseModel):
     # on purpose — `research.resolve_mode` falls back to "auto" for anything it
     # does not recognise, so a stale value in localStorage costs nothing.
     search: str = researching.DEFAULT_MODE
+    # Smí model u téhle zprávy spustit příkaz? Per-zprávu schválně: čtení
+    # souborů se zapíná jednou v nastavení, ale spuštění programu má uživatel
+    # povolit tehdy, kdy ho čeká — ne trvale a na všechno.
+    allow_commands: bool = False
 
 
 class RegenerateRequest(BaseModel):
@@ -68,6 +72,7 @@ class RegenerateRequest(BaseModel):
     model: str | None = None
     effort: str = effort_tiers.DEFAULT_EFFORT
     search: str = researching.DEFAULT_MODE
+    allow_commands: bool = False
 
 
 class EditRequest(RegenerateRequest):
@@ -134,6 +139,7 @@ def _stream_response(
     compact_info: compacting.CompactInfo | None = None,
     replaces: tuple[int, ...] = (),
     name_from: str | None = None,
+    allow_commands: bool = False,
 ) -> EventSourceResponse:
     """Streams one answer and persists it, even if the client hangs up early.
 
@@ -298,6 +304,7 @@ def _stream_response(
                 pinned=pinned,
                 findings=findings,
                 breakdown=breakdown,
+                allow_commands=allow_commands,
             ):
                 if ev.type == "review_start":
                     # The bubble is about to be rewritten in place — park the
@@ -319,6 +326,9 @@ def _stream_response(
                     "note": ev.note,
                     "revised": ev.revised,
                 }
+                if ev.type in ("tool_call", "tool_result"):
+                    payload["tool"] = ev.tool
+                    payload["tool_ok"] = ev.tool_ok
                 if ev.type == "done":
                     in_review = False
                     revised = ev.revised
@@ -454,6 +464,7 @@ async def chat_stream(
         depth,
         compact_info=compact_info,
         name_from=name_from,
+        allow_commands=req.allow_commands,
     )
 
 
@@ -505,6 +516,7 @@ async def chat_regenerate(
         depth,
         compact_info=compact_info,
         replaces=tuple(doomed),
+        allow_commands=req.allow_commands,
     )
 
 
@@ -570,4 +582,5 @@ async def chat_edit(
         _pinned(req.model),
         depth,
         compact_info=compact_info,
+        allow_commands=req.allow_commands,
     )

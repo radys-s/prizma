@@ -42,6 +42,7 @@ import type {
   Message as ChatMessage,
   Provider,
   RoutingOptions,
+  ToolsSettings,
 } from "./lib/types";
 
 const MOBILE_QUERY = "(max-width: 900px)";
@@ -51,6 +52,20 @@ const isMobile = () => window.matchMedia(MOBILE_QUERY).matches;
 const MODEL_KEY = "prizma.model";
 const EFFORT_KEY = "prizma.effort";
 const SEARCH_KEY = "prizma.search";
+
+/** Everything the tools section knows before the server has answered.
+ *
+ *  All-off, and `tools_supported: false` on top: for the half-second before
+ *  `/api/settings` lands, the safe guess is that this build cannot touch the
+ *  computer at all. Guessing the other way would flash a permission switch on
+ *  a public deployment that has none. */
+const TOOLS_UNKNOWN: ToolsSettings = {
+  local_tools: false,
+  local_write: false,
+  tools_roots: "",
+  tools_roots_effective: [],
+  tools_supported: false,
+};
 
 /** One unsent-draft slot per conversation; "new" until the thread has an id. */
 const DRAFT_PREFIX = "prizma.draft.";
@@ -192,6 +207,12 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   const [readPages, setReadPages] = useState(true);
   const [customInstructions, setCustomInstructions] = useState("");
   const [customInstructionsMax, setCustomInstructionsMax] = useState(2000);
+  const [tools, setTools] = useState<ToolsSettings>(TOOLS_UNKNOWN);
+  // Deliberately *not* persisted, unlike model/effort/search. Letting the model
+  // run a program is a decision for one message; a remembered checkbox would
+  // make it the standing state of the app, which is a different thing to agree
+  // to. It resets to off on every reload, and that is the feature.
+  const [allowCommands, setAllowCommands] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // What auto-compact folded away on the last run, or null when the whole
   // thread still fits. `folded` counts from the *start* of the conversation,
@@ -304,8 +325,22 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
       setReadPages(settings.read_pages);
       setCustomInstructions(settings.custom_instructions);
       setCustomInstructionsMax(settings.custom_instructions_max);
+      setTools({
+        local_tools: settings.local_tools,
+        local_write: settings.local_write,
+        tools_roots: settings.tools_roots,
+        tools_roots_effective: settings.tools_roots_effective,
+        tools_supported: settings.tools_supported,
+      });
     });
   }, [guard]);
+
+  // Turning the whole layer off in the dialog has to take the per-message
+  // switch with it — otherwise the composer keeps offering a permission the
+  // backend will refuse, and the refusal only shows up mid-answer.
+  useEffect(() => {
+    if (!tools.local_tools) setAllowCommands(false);
+  }, [tools.local_tools]);
 
   useEffect(() => saveSetting(MODEL_KEY, model), [model]);
   useEffect(() => saveSetting(EFFORT_KEY, effort), [effort]);
@@ -430,6 +465,31 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
             ? { ...m, parts: null, parts_error: reason }
             : m
         )
+      );
+    },
+    onToolCall: (tool, detail) => {
+      if (stale()) return;
+      setMessages((prev) =>
+        patchLast(prev, (m) => {
+          const list = m.tools ?? [];
+          return { ...m, tools: [...list, { index: list.length, name: tool, detail }] };
+        })
+      );
+    },
+    onToolResult: (tool, ok) => {
+      if (stale()) return;
+      // The last unfinished step with this name, not the last step overall:
+      // several calls can be in flight in one round, and results come back in
+      // whatever order the tools finish.
+      setMessages((prev) =>
+        patchLast(prev, (m) => {
+          const list = m.tools ?? [];
+          const at = list.findIndex((t) => t.name === tool && t.ok === undefined);
+          if (at === -1) return m;
+          const next = [...list];
+          next[at] = { ...next[at], ok };
+          return { ...m, tools: next };
+        })
       );
     },
     onSearchDone: (sources, partial) => {
@@ -565,7 +625,14 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
 
   // Read at send time, not at render time, so a picker change mid-stream only
   // affects the next message.
-  const choice = (): RoutingChoice => ({ model, effort, search });
+  const choice = (): RoutingChoice => ({
+    model,
+    effort,
+    search,
+    // Belt and braces with the effect above: a request never carries the
+    // permission when the layer it belongs to is switched off.
+    allow_commands: allowCommands && tools.local_tools,
+  });
 
   const sendMessage = async (text: string) => {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
@@ -882,6 +949,9 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           onModelChange={setModel}
           onEffortChange={setEffort}
           onSearchChange={setSearch}
+          toolsOn={tools.local_tools}
+          allowCommands={allowCommands}
+          onAllowCommandsChange={setAllowCommands}
           draftKey={draftKeyFor(currentId)}
         />
       </main>
@@ -894,6 +964,8 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           customInstructions={customInstructions}
           customInstructionsMax={customInstructionsMax}
           onCustomInstructionsChange={setCustomInstructions}
+          tools={tools}
+          onToolsChange={setTools}
           onClose={() => setSettingsOpen(false)}
           auth={auth}
           onAuthChanged={onAuthChanged}

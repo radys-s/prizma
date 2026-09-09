@@ -7,6 +7,7 @@ import {
   PenLine,
   Route,
   Split,
+  SquareTerminal,
   X,
 } from "lucide-react";
 
@@ -25,6 +26,23 @@ interface Step {
   nested?: boolean;
   /** The step ran and came back with nothing. Marked, not hidden. */
   failed?: boolean;
+}
+
+/** What each local tool is called in the rail. Unknown names fall back to the
+ *  raw name — a model that invents one should show up, not vanish. */
+const TOOL_LABELS: Record<string, string> = {
+  list_dir: "Prohlížím složku",
+  read_file: "Čtu soubor",
+  search_text: "Hledám v souborech",
+  write_file: "Zapisuji soubor",
+  run_command: "Spouštím příkaz",
+};
+
+/** The tail of a path, so a 90-character absolute path doesn't push the rail
+ *  sideways. Commands and search summaries come through unchanged. */
+function shorten(detail: string): string {
+  const parts = detail.split(/[\\/]/);
+  return parts.length > 3 ? `…\\${parts.slice(-2).join("\\")}` : detail;
 }
 
 /** Czech counts three ways. Both nouns below actually hit all three forms. */
@@ -117,6 +135,20 @@ function buildSteps(message: ChatMessage): Step[] {
         nested: true,
       });
     }
+  }
+
+  // Every reach for the machine, in order. One row per call rather than a
+  // count: which file was opened is the part worth checking, and a step that
+  // says "Odmítnuto" is how the sandbox's boundary becomes visible at all.
+  for (const tool of message.tools ?? []) {
+    steps.push({
+      id: `tool-${tool.index}`,
+      label: TOOL_LABELS[tool.name] ?? tool.name,
+      detail: shorten(tool.detail),
+      icon: SquareTerminal,
+      state: tool.ok === undefined ? "active" : "done",
+      failed: tool.ok === false,
+    });
   }
 
   steps.push({

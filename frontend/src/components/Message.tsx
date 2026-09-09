@@ -282,6 +282,7 @@ export function Message({
   const note = substitutionNote(message, providerNames);
   const sources = message.sources ?? [];
   const parts = message.parts ?? [];
+  const toolPending = (message.tools ?? []).some((t) => t.ok === undefined);
   const partsDone = parts.filter((p) => p.ok).length;
   const cost = costLine(message);
   // Ids have to be unique across the whole page. Only one message streams at a
@@ -362,8 +363,12 @@ export function Message({
       )}
 
       {/* The rail replaces itself with the answer — once text is arriving, the
-          text is the progress indicator. */}
-      {message.streaming && !message.content && <SearchSteps message={message} />}
+          text is the progress indicator. The exception is a tool still running:
+          the model can say a sentence and *then* reach for a file, and a pause
+          in mid-answer with nothing on screen reads as a hang. */}
+      {message.streaming && (!message.content || toolPending) && (
+        <SearchSteps message={message} />
+      )}
 
       {message.search_error && (
         <div className="meta-note">

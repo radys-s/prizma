@@ -20,7 +20,12 @@ nezdědil a byl by zpátky u prvního odstavce.
 
 import argparse
 import os
+import subprocess
 import sys
+import threading
+import time
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -30,6 +35,64 @@ BACKEND = REPO / "backend"
 # 2 MB je asi měsíc běžného provozu. Rotace na jeden soubor dozadu stačí —
 # tohle je log pro „proč to dneska nenaběhlo", ne archiv.
 MAX_LOG_BYTES = 2 * 1024 * 1024
+
+# Kolik nejdéle čekat na server, než se otevře okno. Studený start s Nortonem
+# na krku a s importem litellm trvá několik sekund; minuta je hranice, za
+# kterou už je jasné, že server nenaběhl a okno by ukázalo chybovou stránku.
+OPEN_TIMEOUT = 60.0
+OPEN_POLL = 0.5
+
+
+def _edge() -> str | None:
+    """Cesta k Edge, nebo None. Obě větve ProgramFiles, 32bit napřed —
+    Edge se na Windows 11 instaluje do `Program Files (x86)`."""
+    for var in ("ProgramFiles(x86)", "ProgramFiles"):
+        root = os.environ.get(var)
+        if not root:
+            continue
+        exe = Path(root) / "Microsoft" / "Edge" / "Application" / "msedge.exe"
+        if exe.exists():
+            return str(exe)
+    return None
+
+
+def _open_when_ready(port: int) -> None:
+    """Otevře okno Prizmy, jakmile server opravdu odpovídá.
+
+    Úloha ve Správci úloh umí spustit server, ale okno si musí někdo otevřít —
+    bez toho po přihlášení běží appka, kterou není vidět. Zástupce na ploše to
+    řešil jedním kliknutím, tohle to řeší nulou.
+
+    Čeká se na `/api/health`, ne na pevné zpoždění. Než se naimportuje litellm
+    a postaví routovací tabulka, uběhne podle nálady disku několik sekund a
+    okno otevřené dřív ukáže „nelze se připojit" — což vypadá jako rozbitá
+    appka, i když jde jen o pár sekund netrpělivosti.
+    """
+    url = f"http://127.0.0.1:{port}"
+    deadline = time.monotonic() + OPEN_TIMEOUT
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(f"{url}/api/health", timeout=2) as res:
+                if res.status == 200:
+                    break
+        except (urllib.error.URLError, OSError):
+            pass
+        time.sleep(OPEN_POLL)
+    else:
+        print(f"okno se neotevřelo: server neodpověděl do {OPEN_TIMEOUT:.0f} s")
+        return
+
+    edge = _edge()
+    try:
+        if edge:
+            # --app dá okno bez adresního řádku a panelů: vypadá to jako
+            # aplikace, ne jako další tab v prohlížeči.
+            subprocess.Popen([edge, f"--app={url}"], close_fds=True)
+        else:
+            os.startfile(url)  # noqa: S606 - výchozí prohlížeč, když Edge není
+        print("okno appky otevřeno")
+    except OSError as exc:
+        print(f"okno se neotevřelo: {exc}")
 
 
 def _log_path() -> Path:
@@ -43,6 +106,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Prizma jako služba na pozadí")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument(
+        "--open", action="store_true", help="po naběhnutí otevřít okno appky"
+    )
     args = parser.parse_args()
 
     log = _log_path()
@@ -59,6 +125,11 @@ def main() -> int:
     os.chdir(BACKEND)
     sys.path.insert(0, str(BACKEND))
     import uvicorn
+
+    # Vlákno, ne kód za `uvicorn.run`: ten se vrátí až při vypnutí serveru.
+    # Daemon, aby neblokoval ukončení, kdyby server nikdy nenaběhl.
+    if args.open:
+        threading.Thread(target=_open_when_ready, args=(args.port,), daemon=True).start()
 
     try:
         uvicorn.run("app.main:app", host=args.host, port=args.port, log_level="info")

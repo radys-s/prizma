@@ -8,6 +8,8 @@
     Prizma AutoStart  - uvicorn přes pythonw.exe, tedy bez konzolového okna.
                         Poslouchá jen na 127.0.0.1, takže se appka neobjeví
                         na síti. Po pádu se třikrát pokusí nastartovat znovu.
+                        Jakmile server odpovídá, otevře si sám okno appky
+                        (serve.py --open) - po přihlášení není co klikat.
     Claude AutoStart  - Claude je Store (MSIX) aplikace, do WindowsApps se
                         zástupcem mířit nedá. Spouští se přes AppUserModelId,
                         což je oficiální cesta: explorer.exe shell:AppsFolder\...
@@ -68,16 +70,19 @@ if (-not (Test-Path $dist)) {
 # shodí. serve.py obojí nejdřív přesměruje do %LOCALAPPDATA%\Prizma\server.log.
 $serve = Join-Path $PSScriptRoot 'serve.py'
 $action = New-ScheduledTaskAction -Execute $pythonw `
-  -Argument "`"$serve`" --port $Port" `
+  -Argument "`"$serve`" --port $Port --open" `
   -WorkingDirectory $backend
 
 # 30 s po přihlášení: plocha, OneDrive a antivirus si mezitím vezmou disk pro sebe.
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $trigger.Delay = 'PT30S'
 
+# -Hidden: úloha se nemá objevit v seznamu běžících úloh na popředí.
+# Okno stejně nemá (pythonw), tohle je jen o tom, aby po přihlášení nebylo
+# vidět vůbec nic než hotová appka.
 $settings = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-  -StartWhenAvailable `
+  -StartWhenAvailable -Hidden `
   -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
   -ExecutionTimeLimit (New-TimeSpan -Seconds 0) `
   -MultipleInstances IgnoreNew
@@ -85,7 +90,7 @@ $settings = New-ScheduledTaskSettingsSet `
 Register-ScheduledTask -TaskName $PrizmaTask -Action $action -Trigger $trigger `
   -Settings $settings -Description 'Prizma - lokální server na http://127.0.0.1:8000' `
   -Force | Out-Null
-Write-Output "založeno: $PrizmaTask (127.0.0.1:$Port, bez okna)"
+Write-Output "založeno: $PrizmaTask (127.0.0.1:$Port, okno se otevře samo)"
 
 # ---------------------------------------------------------------- Claude
 
@@ -97,7 +102,7 @@ if (-not $claude) {
   $cTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
   $cTrigger.Delay = 'PT45S'   # až po Prizmě, ať se nervou o disk
   $cSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew
+    -StartWhenAvailable -Hidden -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew
 
   Register-ScheduledTask -TaskName $ClaudeTask -Action $cAction -Trigger $cTrigger `
     -Settings $cSettings -Description "Claude ($($claude.AppID))" -Force | Out-Null
