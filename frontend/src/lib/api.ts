@@ -432,6 +432,8 @@ export interface StreamHandlers {
   onToolResult?: (tool: string, ok: boolean, preview: string) => void;
   /** `note` is set when a pinned provider had to be swapped out. */
   onMeta?: (providerId: string, modelName: string, note: string) => void;
+  /** Kousek uvažování modelu. Chodí před odpovědí a nikdy se s ní nemíchá. */
+  onReason?: (content: string) => void;
   onDelta?: (content: string) => void;
   /** Max tier: the draft is done and is about to be rewritten in place. */
   onReviewStart?: () => void;
@@ -447,6 +449,8 @@ export interface StreamHandlers {
 export interface DoneStats {
   latency_ms?: number;
   tokens?: number;
+  /** Jak dlouho model přemýšlel, než napsal první token. Absent, když ne. */
+  reasoning_ms?: number;
 }
 
 /** What the pickers contribute to a chat request. */
@@ -626,6 +630,7 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
     ms?: number;
     latency_ms?: number;
     tokens?: number;
+    reasoning_ms?: number | null;
     folded?: number;
     kept?: number;
     fallback?: boolean;
@@ -703,6 +708,9 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
         handlers.onMeta?.(payload.provider_id, payload.model_name, payload.note ?? "");
       }
       break;
+    case "reason":
+      handlers.onReason?.(payload.content ?? "");
+      break;
     case "delta":
       handlers.onDelta?.(payload.content ?? "");
       break;
@@ -716,6 +724,7 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
       handlers.onDone?.(payload.revised === true, {
         latency_ms: payload.latency_ms,
         tokens: payload.tokens,
+        reasoning_ms: payload.reasoning_ms ?? undefined,
       });
       break;
     case "error":

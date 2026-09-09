@@ -100,6 +100,10 @@ _MESSAGE_COLUMNS: dict[str, str] = {
     # a missing token count is normal, not an error.
     "latency_ms": "INTEGER",
     "tokens": "INTEGER",
+    # Uvažování modelu a čas nad ním. Obojí nullable: většina slugů v katalogu
+    # žádné neposílá a starší řádky ho nemají vůbec.
+    "reasoning": "TEXT",
+    "reasoning_ms": "INTEGER",
 }
 
 

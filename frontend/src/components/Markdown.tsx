@@ -1,7 +1,11 @@
+import "katex/dist/katex.min.css";
+
 import { Children, isValidElement, memo, useMemo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import { rehypeCitations } from "../lib/citations";
 import { CodeBlock } from "./CodeBlock";
 
@@ -21,8 +25,52 @@ function nodeText(node: ReactNode): string {
  */
 const HIGHLIGHT = [rehypeHighlight, { detect: false, ignoreMissing: true }];
 
+/**
+ * `throwOnError: false` je tady zásadní: model si vymyslí nějaké
+ * `\notacommand` a KaTeX by jinak shodil render celé zprávy. Takhle
+ * zčervená jen ten jeden vzorec a zbytek odpovědi zůstane čitelný.
+ */
+const KATEX = [rehypeKatex, { throwOnError: false, strict: false, output: "html" }];
+
+/** Jeden dolar je cena, ne vzorec — viz `dollarise`. */
+const MATH = [remarkMath, { singleDollarTextMath: false }];
+
 const BR = /<br\s*\/?>/gi;
 const TABLE_ROW = /^\s*\|/;
+
+/**
+ * Modely píšou matematiku v LaTeXu, jenže skoro nikdy dolary. Chodí
+ * `\(x\)` a `\[x\]`, což markdown čte jako escapovanou závorku — na
+ * obrazovce z toho zbude holé `(x)` a uvnitř syrový `\frac{a}{b}`.
+ *
+ * Proto se převádějí na dolarovou podobu, kterou `remark-math` zná. Inline
+ * varianta schválně na **dva** dolary: jeden je vypnutý (`singleDollarTextMath`),
+ * aby věta „stálo to $20, teď $30" nezmizela v sazbě vzorce. Za dva dolary
+ * se nikdo neplete, takže cena zůstane cenou a vzorec vzorcem.
+ */
+const MATH_ESCAPE = /\\[([]/;
+const DISPLAY_MATH = /\\\[([\s\S]*?)\\\]/g;
+const INLINE_MATH = /\\\(([\s\S]*?)\\\)/g;
+
+/** Fenced bloky i inline `kód` — tam se nesahá. */
+const CODE_SPAN = /(```[\s\S]*?(?:```|$)|`[^`\n]*`)/;
+
+function dollarise(content: string): string {
+  if (!MATH_ESCAPE.test(content)) return content;
+  // Liché indexy jsou kód (regex má jednu skupinu), ty se přeskakují.
+  return content
+    .split(CODE_SPAN)
+    .map((part, i) =>
+      i % 2 === 1
+        ? part
+        : part
+            .replace(DISPLAY_MATH, (_m, body: string) => `\n\n$$\n${body.trim()}\n$$\n\n`)
+            // Nedokončený vzorec (stream došel po `\(`) se nechytí a chvíli
+            // svítí syrový. Další chunk to spraví — lepší než sázet půlku.
+            .replace(INLINE_MATH, (_m, body: string) => `$$${body.trim()}$$`)
+    )
+    .join("");
+}
 
 /**
  * Models write `<br>` into markdown constantly, because a GFM table cell cannot
@@ -39,13 +87,15 @@ const TABLE_ROW = /^\s*\|/;
 function normalise(content: string): string {
   if (!BR.test(content)) {
     BR.lastIndex = 0;
-    return content;
+    return dollarise(content);
   }
   BR.lastIndex = 0;
-  return content
-    .split("\n")
-    .map((line) => line.replace(BR, TABLE_ROW.test(line) ? " " : "\n"))
-    .join("\n");
+  return dollarise(
+    content
+      .split("\n")
+      .map((line) => line.replace(BR, TABLE_ROW.test(line) ? " " : "\n"))
+      .join("\n")
+  );
 }
 
 interface Props {
@@ -67,14 +117,15 @@ export const Markdown = memo(function Markdown({
   const source = useMemo(() => normalise(content), [content]);
 
   const rehypePlugins = useMemo(
-    () => [HIGHLIGHT, rehypeCitations(sourceCount, anchorPrefix)] as never,
+    // KaTeX až po highlightu: sazbu vzorce už nemá co zvýrazňovat.
+    () => [HIGHLIGHT, KATEX, rehypeCitations(sourceCount, anchorPrefix)] as never,
     [sourceCount, anchorPrefix]
   );
 
   return (
     <div className="prose">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, MATH] as never}
         rehypePlugins={rehypePlugins}
         components={{
           pre({ children }) {

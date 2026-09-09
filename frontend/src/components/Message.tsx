@@ -17,6 +17,7 @@ import { scrollBehavior } from "../lib/motion";
 import type { Message as ChatMessage, Source } from "../lib/types";
 import { Markdown } from "./Markdown";
 import { ProviderMark } from "./ProviderMark";
+import { Reasoning } from "./Reasoning";
 import { SearchSteps } from "./SearchSteps";
 
 interface Props {
@@ -376,6 +377,10 @@ export function Message({
           <span>{message.search_error}</span>
         </div>
       )}
+
+      {/* Nad odpovědí, protože tak to vzniklo: model nejdřív myslel a teprve
+          pak psal. Vlastní komponenta si řídí, kdy je otevřená. */}
+      <Reasoning message={message} />
 
       {message.content && (
         <Markdown
