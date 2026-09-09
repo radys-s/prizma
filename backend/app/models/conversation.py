@@ -69,6 +69,17 @@ class Message(SQLModel, table=True):
     # kvóty, ta jediná informace, kterou uživatel na výsledku nevidí.
     parts: Optional[str] = None
 
+    # Uvažování modelu, jak přišlo ve streamu — buď zvláštním polem delty
+    # (`reasoning_content`), nebo v bloku `<think>` uvnitř textu. Uložené
+    # odděleně od `content` ze dvou důvodů: v bublině odpovědi nemá co dělat, a
+    # do dalšího kola konverzace se posílat nesmí (historie se skládá z
+    # `content`, takže tohle je z ní vyloučené samo od sebe).
+    reasoning: Optional[str] = None
+    # Jak dlouho model přemýšlel, než napsal první token odpovědi. Vlastní
+    # číslo, ne kus `latency_ms` — z celkového času nejde poznat, kolik padlo na
+    # uvažování a kolik na hledání na webu.
+    reasoning_ms: Optional[int] = None
+
     # What the answer cost, so the router's value is visible instead of
     # implied. `latency_ms` is wall clock from the first byte of the request to
     # the last token — search stage included, because that is the wait the user

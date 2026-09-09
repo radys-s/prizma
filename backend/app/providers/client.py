@@ -60,6 +60,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class StreamEvent:
     # "meta"        provider + model chosen, answer is about to start
+    # "reason"      a chunk of the model's own thinking, before the answer
     # "delta"       a chunk of answer text
     # "tool_call"   the model asked for a local tool; `tool` is its name and
     #               `content` the one-line summary the UI shows
@@ -196,6 +197,91 @@ def _accumulate_tool_calls(fragments, sink: dict[int, dict]) -> None:
             slot["arguments"] += function.arguments
 
 
+# Jak model dodá své uvažování, závisí na rodině. Dvě cesty:
+#
+#   * vlastní pole v deltě — `reasoning_content` (DeepSeek, Groq gpt-oss)
+#     nebo `reasoning` (OpenRouter). Přijde odděleně od odpovědi a stačí ho
+#     přeposlat;
+#   * `<think>…</think>` přímo v `content` (Qwen QwQ, R1 distily přes
+#     poskytovatele, kteří pole nemají). Tohle je ta horší varianta: dokud se
+#     blok nevyřízne, teče uvažování do bubliny odpovědi jako text — což byl
+#     přesně ten stav, kdy odpověď „začala“ dřív, než model domyslel.
+_OPEN_THINK = "<think>"
+_CLOSE_THINK = "</think>"
+
+
+def _tail_prefix(text: str, needle: str) -> int:
+    """Délka konce `text`, který může být začátkem `needle`.
+
+    Chunk streamu končí kde chce, klidně uprostřed `</thi|nk>`. Tenhle kus se
+    nesmí poslat ven jako text — jinak se v odpovědi objeví kus značky a druhá
+    půlka se pak nikdy nenajde.
+    """
+    for size in range(min(len(needle) - 1, len(text)), 0, -1):
+        if text.endswith(needle[:size]):
+            return size
+    return 0
+
+
+class _ThinkSplitter:
+    """Rozděluje proud `content` na ("reason", …) a ("text", …).
+
+    Odzbrojí se, jakmile projde první neprázdný text: `<think>` uprostřed už
+    napsané odpovědi je citace nebo kus kódu, ne uvažování. Neuzavřený blok na
+    konci streamu se počítá celý jako uvažování — model prostě nedomyslel a
+    prázdná bublina je lepší než odpověď složená z jeho poznámek.
+    """
+
+    def __init__(self) -> None:
+        self._buffer = ""
+        self._inside = False
+        self._armed = True
+
+    def feed(self, chunk: str) -> list[tuple[str, str]]:
+        self._buffer += chunk
+        out: list[tuple[str, str]] = []
+        while self._inside or self._armed:
+            needle = _CLOSE_THINK if self._inside else _OPEN_THINK
+            at = self._buffer.find(needle)
+            if at == -1:
+                break
+            head = self._buffer[:at]
+            self._buffer = self._buffer[at + len(needle) :]
+            if head:
+                out.append(("reason" if self._inside else "text", head))
+                if not self._inside and head.strip():
+                    self._armed = False
+            self._inside = not self._inside
+
+        if self._inside or self._armed:
+            needle = _CLOSE_THINK if self._inside else _OPEN_THINK
+            hold = _tail_prefix(self._buffer, needle)
+        else:
+            hold = 0
+        emit = self._buffer[: len(self._buffer) - hold] if hold else self._buffer
+        self._buffer = self._buffer[len(self._buffer) - hold :] if hold else ""
+        if emit:
+            out.append(("reason" if self._inside else "text", emit))
+            if not self._inside and emit.strip():
+                self._armed = False
+        return out
+
+    def flush(self) -> list[tuple[str, str]]:
+        rest, self._buffer = self._buffer, ""
+        if not rest:
+            return []
+        return [("reason" if self._inside else "text", rest)]
+
+
+def _reasoning_of(delta) -> str:
+    """Uvažování z vlastního pole delty, ať už mu provider říká jakkoli."""
+    for field in ("reasoning_content", "reasoning"):
+        value = getattr(delta, field, None)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
 async def _try_stream(
     provider: ProviderModel,
     model: str,
@@ -204,7 +290,8 @@ async def _try_stream(
     usage: dict,
     tools: list[dict] | None = None,
     calls: dict[int, dict] | None = None,
-) -> AsyncIterator[str]:
+) -> AsyncIterator[tuple[str, str]]:
+    """Yieldne ("text", …) pro odpověď a ("reason", …) pro uvažování modelu."""
     response = await litellm.acompletion(
         model=model,
         **keystore.endpoint(provider),
@@ -226,6 +313,7 @@ async def _try_stream(
             stream_options={"include_usage": True},
         ),
     )
+    splitter = _ThinkSplitter()
     async for chunk in response:
         _collect_usage(chunk, usage)
         if not chunk.choices:
@@ -233,8 +321,14 @@ async def _try_stream(
         delta = chunk.choices[0].delta
         if calls is not None:
             _accumulate_tool_calls(getattr(delta, "tool_calls", None), calls)
+        thought = _reasoning_of(delta)
+        if thought:
+            yield ("reason", thought)
         if delta.content:
-            yield delta.content
+            for piece in splitter.feed(delta.content):
+                yield piece
+    for piece in splitter.flush():
+        yield piece
 
 
 _REVIEW_SYSTEM = (
@@ -291,12 +385,21 @@ async def _stream_review(
             stream_options={"include_usage": True},
         ),
     )
+    # Recenzent uvažuje taky, a jeho uvažování nikoho nezajímá — návrh, který
+    # komentuje, má uživatel před očima. Zajímá nás jen výsledný text, takže se
+    # tady stejný rozdělovač používá naopak: uvažování se zahazuje.
+    splitter = _ThinkSplitter()
     async for chunk in response:
         if usage is not None:
             _collect_usage(chunk, usage)
         delta = chunk.choices[0].delta.content if chunk.choices else None
         if delta:
-            yield delta
+            for kind, piece in splitter.feed(delta):
+                if kind == "text":
+                    yield piece
+    for kind, piece in splitter.flush():
+        if kind == "text":
+            yield piece
 
 
 # Základní pravidla odpovědi, která jedou před každým dotazem.
@@ -326,6 +429,9 @@ _HOUSE_RULES = (
     "Začni odpovědí, ne úvodem. Nepřevyprávěj otázku, nehodnoť ji a nedělej "
     "závěrečné shrnutí toho, co jsi právě napsal. Délku odpovědi řiď podle "
     "otázky: na krátkou otázku krátká odpověď.\n\n"
+    "Když má otázka konkrétní výsledek (číslo, jméno, ano/ne, verdikt), napiš "
+    "ho hned do prvního řádku a samotný výsledek dej tučně. Odvození patří "
+    "až za něj.\n\n"
     "Strukturu použij, jen když obsah opravdu má části. Odrážky nejsou "
     "náhrada za souvislý text a nadpis nad třemi větami je navíc.\n\n"
     "Nevymýšlej si. Fakta, čísla, názvy funkcí a odkazy uváděj jen tehdy, "
@@ -457,6 +563,11 @@ async def stream_chat(
     for provider in providers:
         for model in model_health.usable_models(provider.models):
             started = False
+            # `started` říká „už jsme ohlásili model", `spoke` „přišel text
+            # odpovědi". Od chvíle, kdy se streamuje i uvažování, to nejsou
+            # totéž: model, který jen přemýšlel a pak spadl, nesmí projít jako
+            # hotová odpověď.
+            spoke = False
             draft = ""
             try:
                 usable_tools = _tools_for(model, tools)
@@ -469,7 +580,7 @@ async def stream_chat(
                 for round_number in range(MAX_TOOL_ROUNDS + 1):
                     calls: dict[int, dict] = {}
                     round_text = ""
-                    async for delta in _try_stream(
+                    async for kind, delta in _try_stream(
                         provider,
                         model,
                         history,
@@ -484,6 +595,12 @@ async def stream_chat(
                             # with a model that turned out to be dead.
                             started = True
                             yield _meta(provider, model, pinned_provider)
+                        if kind == "reason":
+                            yield StreamEvent(
+                                type="reason", provider_id=provider.id, content=delta
+                            )
+                            continue
+                        spoke = True
                         round_text += delta
                         draft += delta
                         yield StreamEvent(
@@ -562,9 +679,11 @@ async def stream_chat(
                             }
                         )
 
-                if not started:
+                if not spoke:
                     # Clean finish with zero content — treat as a failed attempt
                     # so we fall through instead of showing an empty answer.
+                    # Platí i pro model, který jen přemýšlel: uvažování bez
+                    # odpovědi je pro čtenáře pořád prázdná bublina.
                     attempts.append(
                         Attempt(provider, model, RuntimeError("prázdná odpověď"))
                     )
@@ -594,7 +713,11 @@ async def stream_chat(
                 return
 
             except Exception as exc:  # noqa: BLE001 - deliberately broad, see module docstring
-                if started:
+                # `spoke`, ne `started`: pravidlo z docstringu modulu mluví o
+                # rozepsané *odpovědi*. Model, který stihl jen zamyšlení a pak
+                # spadl, nemá co splétat — další v řadě začne od začátku a UI
+                # si při novém `meta` uvažování zahodí.
+                if spoke:
                     yield StreamEvent(
                         type="error", provider_id=provider.id, content=_humanize(
                             Attempt(provider, model, exc)

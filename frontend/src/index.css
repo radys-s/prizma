@@ -1420,11 +1420,134 @@ textarea {
   color: var(--danger);
 }
 
+/* --------------------------------------------------------- uvažování ----- */
+
+/* Blok s vlastním myšlením modelu. Vizuálně schválně o patro níž než odpověď:
+   žádné pozadí, jen svislá linka jako u citace, tlumené písmo a menší stupeň.
+   Kdyby vypadal jako karta, soupeřil by s odpovědí o pozornost — a přitom je
+   to doprovodný materiál. */
+.reasoning {
+  margin: 2px 0 10px;
+}
+
+.reasoning-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+
+.reasoning-head:hover {
+  color: var(--text-muted);
+}
+
+.reasoning-caret {
+  transition: transform var(--dur) var(--ease);
+}
+
+.reasoning.open .reasoning-caret {
+  transform: rotate(90deg);
+}
+
+/* Dokud model přemýšlí, popisek dýchá — jediná známka života ve chvíli, kdy
+   se na obrazovce jinak neděje nic. Zastaví se v okamžiku, kdy začne přibývat
+   odpověď, protože pak už je co číst. */
+.reasoning.live .reasoning-label {
+  animation: reasoning-breathe 1.8s ease-in-out infinite;
+}
+
+@keyframes reasoning-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.reasoning-body {
+  margin-top: 6px;
+  padding: 2px 0 2px 13px;
+  border-left: 2px solid var(--border);
+  max-height: 260px;
+  overflow-y: auto;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  line-height: 1.62;
+  overflow-wrap: anywhere;
+}
+
+/* Uvnitř poznámek žádná typografická hierarchie. Nadpis v uvažování je jen
+   odstavec, který si model označil — když ho pustíme v plné velikosti, přebije
+   odpověď pod ním. */
+.reasoning-body .prose :is(h1, h2, h3, h4, h5, h6) {
+  margin: 10px 0 4px;
+  color: var(--text-muted);
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.reasoning-body .prose > :first-child {
+  margin-top: 0;
+}
+
+.reasoning-body .prose > :last-child {
+  margin-bottom: 0;
+}
+
+/* Reduced motion: dýchání zmizí, ale popisek musí zůstat čitelný — globální
+   pravidlo dole zkracuje dobu animace, což by ho zamrazilo na náhodné
+   průhlednosti prvního snímku. */
+@media (prefers-reduced-motion: reduce) {
+  .reasoning.live .reasoning-label {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 /* ------------------------------------------------------------- prose ----- */
 
 .prose {
   overflow-wrap: anywhere;
   text-wrap: pretty;
+}
+
+/* Samotný závěr, zvýrazněný.
+
+   Dohoda s modelem je v `_HOUSE_RULES`: má-li otázka konkrétní výsledek,
+   patří tučně na první řádek. Tohle pravidlo ten první tučný kus vezme a
+   dá mu barvu, aby při rychlém pohledu bylo vidět, co je odpověď a co už
+   je odvození — u dlouhého výpočtu je to jediné, co člověk hledá.
+
+   Schválně jen v prvním odstavci: tučné se v odpovědích používá běžně a
+   obarvit ho všude by ze zvýraznění udělalo šum. Když model pravidlo
+   nedodrží a nic tučného tam nedá, prostě se nic nerozsvítí. */
+.message.assistant .prose > p:first-child strong {
+  padding: 1px 5px;
+  margin: 0 -1px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Uvažování je poznámkový blok — tam se nic nezvýrazňuje, jinak by dvě
+   místa na obrazovce tvrdila, že jsou závěr. Selektor musí být delší než
+   ten nad ním, jinak ho nepřebije a v poznámkách svítí druhá „odpověď". */
+.message.assistant .reasoning-body .prose > p:first-child strong {
+  padding: 0;
+  margin: 0;
+  background: none;
+  color: inherit;
 }
 
 /* [2] in the answer, turned into a link to source 2 by the rehype pass. Small
@@ -1568,6 +1691,44 @@ textarea {
   margin: 0 0 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+}
+
+/* --------------------------------------------------------- matematika ----- */
+
+/* KaTeX sází vzorec do jednoho neroztržitelného řádku. Dlouhá rovnice by
+   proto roztáhla celé vlákno do strany — musí scrollovat sama za sebe.
+   `padding` je tu kvůli tomu, že se scrollbar jinak kreslí přes dolní index. */
+.prose .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 14px 0;
+  padding: 2px 0 6px;
+}
+
+/* Zdědit velikost okolního textu. KaTeX má vlastní 1.21× a v bublině by
+   se vzorec choval jako nadpis. */
+.prose .katex {
+  font-size: 1.05em;
+}
+
+/* Do bloku uvažování patří poznámka, ne vývěsní štít. */
+.reasoning-body .katex {
+  font-size: 1em;
+}
+
+/* Nepovedený vzorec: KaTeX ho vypíše jako zdroj a obarví `--katex-error`.
+   Vlastní barva, ať to ladí se zbytkem a nekřičí jako chyba aplikace. */
+.prose .katex-error {
+  color: var(--danger, #d05a4a);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+/* Bez `overflow-wrap: anywhere` z .prose — vzorec se láme jen tam, kde to
+   KaTeX povolí, jinak by se `\frac` rozpadl na jednotlivé znaky. */
+.prose :is(.katex, .katex-display) {
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 /* The wrapper scrolls, so the table is free to be as wide as its content

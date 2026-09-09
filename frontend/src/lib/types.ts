@@ -214,6 +214,13 @@ export interface Message {
   /** Live-only: local tools this answer reached for, in the order it did. */
   tools?: ToolStep[] | null;
 
+  /** Uvažování modelu, než začal odpovídat. Streamuje se živě a čte se zpátky
+   *  z řádku po reloadu, takže po návratu do vlákna je pořád po ruce. Prázdné
+   *  u modelů, které žádné neposílají — což je většina katalogu. */
+  reasoning?: string | null;
+  /** Jak dlouho to uvažování trvalo, v ms. Null, když se neměřilo. */
+  reasoning_ms?: number | null;
+
   /** The subtasks a hard task was split into, in order. Written live by the
    *  stream and read back from the row on a reload. */
   parts?: TaskPart[] | null;

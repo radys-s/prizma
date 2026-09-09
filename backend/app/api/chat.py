@@ -34,6 +34,12 @@ _naming: set[asyncio.Task] = set()
 _CHAT_LIMIT = 20
 _CHAT_WINDOW = 60.0
 
+# Kolik uvažování se uloží k odpovědi. Uvažovací modely jsou upovídané — u
+# složitého zadání je „thinking" klidně čtyřikrát delší než odpověď — a tohle
+# je materiál k nahlédnutí, ne obsah vlákna. Živě se ukáže celý; do databáze jde
+# useknutý, aby jedno vlákno nenafouklo soubor na desítky megabajtů.
+_REASONING_MAX = 20000
+
 
 def _limit_chat(request: Request) -> None:
     ip = request.client.host if request.client else "unknown"
@@ -296,6 +302,12 @@ def _stream_response(
         revised = False
         tokens = 0
         latency_ms = 0
+        # Uvažování modelu a doba, kterou nad ním strávil. Měří se od prvního
+        # kousku uvažování do prvního tokenu odpovědi — přesně ten úsek, kdy na
+        # obrazovce nic nepřibývalo a uživatel čekal.
+        reasoning = ""
+        reasoning_ms = 0
+        reasoning_started_at: float | None = None
         try:
             async for ev in stream_chat(
                 messages,
@@ -312,8 +324,20 @@ def _stream_response(
                     draft, assistant_text, in_review = assistant_text, "", True
                 elif ev.type == "review_abort":
                     assistant_text, in_review = draft, False
+                elif ev.type == "reason":
+                    if reasoning_started_at is None:
+                        reasoning_started_at = time.monotonic()
+                    reasoning += ev.content
                 elif ev.type == "delta":
+                    if reasoning_started_at is not None and reasoning_ms == 0:
+                        reasoning_ms = int(
+                            (time.monotonic() - reasoning_started_at) * 1000
+                        )
                     assistant_text += ev.content
+                if ev.type == "meta" and used_provider and ev.provider_id != used_provider:
+                    # Předchozí model stihl jen zamyslet se a pak spadl. Jeho
+                    # uvažování patří k odpovědi, která nikdy nevznikla.
+                    reasoning, reasoning_ms, reasoning_started_at = "", 0, None
                 if ev.type in ("meta", "done"):
                     used_provider = ev.provider_id or used_provider
                     used_model = ev.model_name or used_model
@@ -334,8 +358,15 @@ def _stream_response(
                     revised = ev.revised
                     tokens = ev.tokens
                     latency_ms = int((time.monotonic() - started_at) * 1000)
+                    if reasoning_started_at is not None and reasoning_ms == 0:
+                        # Uvažoval a pak rovnou skončil — bez jediného tokenu
+                        # odpovědi se čas neuzavřel nikde jinde.
+                        reasoning_ms = int(
+                            (time.monotonic() - reasoning_started_at) * 1000
+                        )
                     payload["latency_ms"] = latency_ms
                     payload["tokens"] = tokens
+                    payload["reasoning_ms"] = reasoning_ms or None
                 yield {"event": ev.type, "data": json.dumps(payload)}
         except selector.NotEnoughProviders as exc:
             yield {"event": "error", "data": json.dumps({"content": str(exc)})}
@@ -393,6 +424,11 @@ def _stream_response(
                             search_mode=depth if findings else None,
                             sources=researching.sources_json(findings),
                             parts=decomposing.parts_json(breakdown),
+                            # Ořezané: uvažování bývá delší než odpověď a je to
+                            # doprovodný materiál, ne obsah vlákna. Do dalšího
+                            # kola se neposílá — historie se skládá z `content`.
+                            reasoning=reasoning[:_REASONING_MAX] or None,
+                            reasoning_ms=reasoning_ms or None,
                             # Measured even when the stream was cut short, so a
                             # stopped answer still reports the time it took.
                             latency_ms=latency_ms

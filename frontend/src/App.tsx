@@ -242,6 +242,12 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   const pendingRef = useRef("");
   const rafRef = useRef<number>();
 
+  // Uvažování teče stejně hustě jako odpověď, takže má vlastní vyrovnávací
+  // paměť se stejným pravidlem: jedno překreslení za snímek. Oddělenou proto,
+  // že cíl je jiné pole zprávy a smíchat je by znamenalo uvažování v bublině.
+  const reasonPendingRef = useRef("");
+  const reasonRafRef = useRef<number>();
+
   // The pre-review answer. Held outside state because the review pass has to be
   // able to put it back after the bubble was already cleared.
   const draftRef = useRef("");
@@ -386,6 +392,16 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     return chunk;
   };
 
+  const drainReasoning = (): string => {
+    if (reasonRafRef.current !== undefined) {
+      cancelAnimationFrame(reasonRafRef.current);
+      reasonRafRef.current = undefined;
+    }
+    const chunk = reasonPendingRef.current;
+    reasonPendingRef.current = "";
+    return chunk;
+  };
+
   const endStream = () => {
     setStreaming(false);
     abortRef.current = null;
@@ -522,8 +538,36 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     onMeta: (providerId, modelName, note) => {
       if (stale()) return;
       setMessages((prev) =>
-        patchLast(prev, (m) => ({ ...m, provider_id: providerId, model_name: modelName, note }))
+        patchLast(prev, (m) => {
+          // Druhé `meta` znamená, že první model neodpověděl a router sáhl po
+          // dalším. Co stihl namyslet, patřilo k odpovědi, která nevznikla —
+          // nechat to viset nad textem od někoho jiného by lhalo.
+          const switched = m.provider_id != null && m.provider_id !== providerId;
+          if (switched) drainReasoning();
+          return {
+            ...m,
+            provider_id: providerId,
+            model_name: modelName,
+            note,
+            reasoning: switched ? "" : m.reasoning,
+          };
+        })
       );
+    },
+    onReason: (chunk) => {
+      if (stale()) return;
+      reasonPendingRef.current += chunk;
+      if (reasonRafRef.current !== undefined) return;
+      reasonRafRef.current = requestAnimationFrame(() => {
+        reasonRafRef.current = undefined;
+        const text = reasonPendingRef.current;
+        reasonPendingRef.current = "";
+        if (text && !stale()) {
+          setMessages((prev) =>
+            patchLast(prev, (m) => ({ ...m, reasoning: (m.reasoning ?? "") + text }))
+          );
+        }
+      });
     },
     onDelta: (delta) => {
       if (stale()) return;
@@ -562,12 +606,14 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
       // by then the list may belong to a different conversation entirely.
       if (stale()) return;
       const tail = drainBuffer();
+      const reasonTail = drainReasoning();
       setMessages((prev) =>
         patchLast(prev, (m) => ({
           ...m,
           // Stopped mid-revision: the draft is a whole answer, the partial
           // rewrite is not. Same rule the backend applies when it saves.
           content: m.reviewing && !revised ? draftRef.current : m.content + tail,
+          reasoning: (m.reasoning ?? "") + reasonTail,
           streaming: false,
           reviewing: false,
           revised,
@@ -576,6 +622,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           // the halves it actually has rather than printing a zero.
           latency_ms: stats?.latency_ms ?? m.latency_ms,
           tokens: stats?.tokens ?? m.tokens,
+          reasoning_ms: stats?.reasoning_ms ?? m.reasoning_ms,
         }))
       );
       endStream();
@@ -583,12 +630,14 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     onError: (msg) => {
       if (stale()) return;
       const tail = drainBuffer();
+      const reasonTail = drainReasoning();
       setMessages((prev) => {
         const settled = patchLast(prev, (m) => ({
           ...m,
           // An error during the review pass falls back to the draft, same as
           // an abort — the user should not lose an answer they already read.
           content: m.reviewing ? draftRef.current : m.content + tail,
+          reasoning: (m.reasoning ?? "") + reasonTail,
           streaming: false,
           reviewing: false,
         }));
@@ -688,6 +737,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     abortRef.current?.abort();
     abortRef.current = null;
     drainBuffer();
+    drainReasoning();
     draftRef.current = "";
     setStreaming(false);
     setCompact(null);
