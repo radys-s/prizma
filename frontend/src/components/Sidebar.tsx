@@ -1,8 +1,10 @@
 import {
   Check,
+  ChevronDown,
   Download,
   KeyRound,
   LogOut,
+  MoreHorizontal,
   Pencil,
   Pin,
   PinOff,
@@ -12,7 +14,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { searchMessages } from "../lib/api";
 import { dayBucket, normalize } from "../lib/date";
 import type { Theme } from "../lib/theme";
@@ -27,6 +29,110 @@ const PINNED_LABEL = "Připnuté";
 /** Long enough that the server isn't asked about `a`, short enough to feel live. */
 const SEARCH_MIN_CHARS = 2;
 const SEARCH_DEBOUNCE_MS = 250;
+
+/**
+ * Zavře, co je otevřené, když se klikne jinam nebo padne Escape.
+ *
+ * Používají to obě nabídky v panelu — u řádku konverzace i u účtu. Bez toho
+ * zůstane menu viset přes seznam, dokud se netrefíš zpátky na to samé tlačítko.
+ */
+function useDismiss(open: boolean, close: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) close();
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, close]);
+  return ref;
+}
+
+/**
+ * Akce jednoho řádku pod jedním „⋯“.
+ *
+ * Dřív tu na hoveru vyjely čtyři ikony vedle sebe. Byly pořád zabrané —
+ * `.row-actions` sice startuje na `opacity: 0`, ale místo v řádku drží
+ * i neviditelné, takže z 260px panelu ukusovaly ~90 px a názvy se zkracovaly
+ * na „Přeh“, „Vý“ nebo „Přístup k int…“. Jedno tlačítko zabere 24 px a otevře
+ * nabídku, kde má každá akce jméno — což je navíc jediný způsob, jak se dá
+ * poznat, co ta ikonka se šipkou dolů vlastně dělá.
+ */
+function RowMenu({
+  conversation,
+  open,
+  onToggle,
+  onClose,
+  onRename,
+  onPin,
+  onExport,
+  onDelete,
+}: {
+  conversation: Conversation;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onRename: () => void;
+  onPin: () => void;
+  onExport: () => void;
+  onDelete: () => void;
+}) {
+  const ref = useDismiss(open, onClose);
+  const run = (action: () => void) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClose();
+    action();
+  };
+
+  return (
+    <div className="row-menu" ref={ref}>
+      <button
+        type="button"
+        className="icon-btn row-menu-trigger"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Akce konverzace ${conversation.title}`}
+        title="Další akce"
+      >
+        <MoreHorizontal size={15} />
+      </button>
+
+      {open && (
+        <div className="row-menu-list" role="menu">
+          <button type="button" role="menuitem" onClick={run(onRename)}>
+            <Pencil size={14} />
+            Přejmenovat
+          </button>
+          <button type="button" role="menuitem" onClick={run(onPin)}>
+            {conversation.pinned ? <PinOff size={14} /> : <Pin size={14} />}
+            {conversation.pinned ? "Odepnout" : "Připnout nahoru"}
+          </button>
+          <button type="button" role="menuitem" onClick={run(onExport)}>
+            <Download size={14} />
+            Stáhnout jako Markdown
+          </button>
+          <div className="row-menu-sep" />
+          <button type="button" role="menuitem" className="danger" onClick={run(onDelete)}>
+            <Trash2 size={14} />
+            Smazat
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface Props {
   conversations: Conversation[];
@@ -68,6 +174,9 @@ export function Sidebar({
   const [draft, setDraft] = useState("");
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [hits, setHits] = useState<MessageHit[]>([]);
+  const [menuId, setMenuId] = useState<number | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useDismiss(accountOpen, () => setAccountOpen(false));
 
   const needle = query.trim();
 
@@ -259,56 +368,16 @@ export function Sidebar({
                           <Pin size={12} className="pin-indicator" aria-hidden />
                         )}
                         <span className="conversation-title">{c.title}</span>
-                        <div className="row-actions">
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onPin(c.id, !c.pinned);
-                            }}
-                            aria-label={c.pinned ? "Odepnout konverzaci" : "Připnout konverzaci"}
-                            title={c.pinned ? "Odepnout" : "Připnout nahoru"}
-                          >
-                            {c.pinned ? <PinOff size={14} /> : <Pin size={14} />}
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onExport(c.id);
-                            }}
-                            aria-label="Stáhnout konverzaci jako Markdown"
-                            title="Stáhnout jako Markdown"
-                          >
-                            <Download size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startRename(c);
-                            }}
-                            aria-label="Přejmenovat konverzaci"
-                            title="Přejmenovat"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-btn danger"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConfirmingId(c.id);
-                            }}
-                            aria-label="Smazat konverzaci"
-                            title="Smazat"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
+                        <RowMenu
+                          conversation={c}
+                          open={menuId === c.id}
+                          onToggle={() => setMenuId(menuId === c.id ? null : c.id)}
+                          onClose={() => setMenuId(null)}
+                          onRename={() => startRename(c)}
+                          onPin={() => onPin(c.id, !c.pinned)}
+                          onExport={() => onExport(c.id)}
+                          onDelete={() => setConfirmingId(c.id)}
+                        />
                       </>
                     )}
                   </div>
@@ -354,29 +423,58 @@ export function Sidebar({
             </span>
           </button>
 
-          <div className="theme-row">
-            <span className="theme-row-label">Vzhled</span>
-            <ThemeToggle value={theme} onChange={onThemeChange} />
-          </div>
-
-          <div className="account-row">
-            <span className="account-id" title={accountLabel}>
+          {/* Vzhled i odhlášení pod účtem, ne jako dva samostatné řádky.
+              Patička držela tři pruhy pro věci, na které se sahá jednou za
+              měsíc, a ukusovala výšku seznamu, na který se dívá člověk pořád. */}
+          <div className="account-menu" ref={accountRef}>
+            <button
+              type="button"
+              className="account-trigger"
+              onClick={() => setAccountOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={accountOpen}
+              title={accountLabel}
+            >
               {/* Iniciála místo ikonky panáčka: jeden účet, který má jméno,
                   vypadá jako účet — obecný piktogram vypadá jako placeholder. */}
               <span className="account-avatar" aria-hidden="true">
                 {accountLabel.trim().charAt(0).toUpperCase() || <UserRound size={13} />}
               </span>
               <span className="account-name">{accountLabel}</span>
-            </span>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={onSignOut}
-              aria-label="Odhlásit se"
-              title="Odhlásit se"
-            >
-              <LogOut size={15} />
+              <ChevronDown size={14} className="account-chevron" aria-hidden />
             </button>
+
+            {accountOpen && (
+              <div className="account-menu-list" role="menu">
+                <div className="account-menu-head">Vzhled</div>
+                <div className="account-menu-theme">
+                  <ThemeToggle value={theme} onChange={onThemeChange} />
+                </div>
+                <div className="row-menu-sep" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAccountOpen(false);
+                    onOpenSettings();
+                  }}
+                >
+                  <KeyRound size={14} />
+                  Nastavení a klíče
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAccountOpen(false);
+                    onSignOut();
+                  }}
+                >
+                  <LogOut size={14} />
+                  Odhlásit se
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -12,10 +12,9 @@ import {
 
 import { clearSetting, loadSetting, saveSetting } from "../lib/storage";
 import type { ComputerMode, RoutingOptions } from "../lib/types";
-import { ComputerPicker } from "./ComputerPicker";
 import { EffortSegments } from "./EffortSegments";
 import { RoutingPicker, type PickerOption } from "./RoutingPicker";
-import { SearchPicker } from "./SearchPicker";
+import { ToolsMenu } from "./ToolsMenu";
 
 const MAX_HEIGHT_PX = 200;
 
@@ -207,25 +206,21 @@ export function Composer({
                   onChange={onEffortChange}
                   disabled={disabled}
                 />
-                <SearchPicker
-                  options={routing.searches}
-                  value={search}
-                  onChange={onSearchChange}
+                {/* Web i počítač pod jedním jménem. Dvě rozbalovačky vedle
+                    sebe, každá popsaná svojí hodnotou („Auto“, „Jen chat“),
+                    neříkaly ani co dělají, ani že spolu souvisejí. Co je
+                    vypnuté a co zapnuté, je teď vidět z popisku tlačítka. */}
+                <ToolsMenu
+                  searches={routing.searches}
+                  search={search}
+                  onSearchChange={onSearchChange}
+                  toolsOn={toolsOn}
+                  computer={computer}
+                  onComputerChange={onComputerChange}
+                  computerRoots={computerRoots}
+                  canWrite={canWrite}
                   disabled={disabled}
                 />
-                {/* Co se vůbec smí, drží dialog v nastavení. Tady se
-                    rozhoduje, jestli se toho u téhle zprávy má použít — a
-                    spuštění programu je třetí stupeň, ne druhé zaškrtávátko,
-                    protože bez čtení nedává smysl. */}
-                {toolsOn && (
-                  <ComputerPicker
-                    value={computer}
-                    onChange={onComputerChange}
-                    roots={computerRoots}
-                    canWrite={canWrite}
-                    disabled={disabled}
-                  />
-                )}
               </div>
             )}
 
