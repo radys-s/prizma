@@ -461,6 +461,14 @@ export interface RoutingChoice {
   /** Globe control: "auto" | "web" | "deep" | "off". */
   search: string;
   /**
+   * Má tahle zpráva pracovat s počítačem, nebo je to obyčejný chat?
+   *
+   * Odpovídá přepínači v composeru. Server to bere jako přání, ne povolení —
+   * co se vůbec smí, drží nastavení aplikace a to je vypnuté, dokud ho
+   * uživatel nezapne.
+   */
+  use_tools: boolean;
+  /**
    * May the model run a program on this machine for this message?
    *
    * Per message rather than a stored setting: reading files is a decision made

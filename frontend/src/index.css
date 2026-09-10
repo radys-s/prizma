@@ -2370,20 +2370,24 @@ textarea {
   cursor: not-allowed;
 }
 
-/* Permission to run a program, not a preference — so when it is on it is the
-   loudest control in the row, and when it is off it looks like every other
-   chip. Accent fill rather than a dot: the state has to be readable in the
-   half-second before the message is sent. */
-.terminal-toggle[aria-checked="true"] {
+/* Sahat na disk je pravomoc, ne preference — takže zapnutý je tenhle přepínač
+   nejhlasitější prvek v řadě a vypnutý vypadá jako každý jiný chip. Výplň
+   akcentem, ne tečka: stav musí být čitelný v té půlvteřině, než zpráva odejde.
+   Ikona a šipka jsou jinak tlumené, tady musí zesvětlit s textem. */
+.picker-computer[data-on="true"] > .picker > .picker-trigger {
   border-color: transparent;
   background: var(--accent);
   color: var(--accent-fg);
 }
 
-.terminal-toggle[aria-checked="true"]:hover:not(:disabled) {
+.picker-computer[data-on="true"] > .picker > .picker-trigger:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: transparent;
-  color: var(--accent-fg);
+}
+
+.picker-computer[data-on="true"] .picker-icon,
+.picker-computer[data-on="true"] .picker-chevron {
+  color: inherit;
 }
 
 .picker-icon {

@@ -1,4 +1,4 @@
-import { ArrowUp, Cpu, Globe, SquareTerminal, Square } from "lucide-react";
+import { ArrowUp, Cpu, Globe, Square } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -11,7 +11,8 @@ import {
 } from "react";
 
 import { clearSetting, loadSetting, saveSetting } from "../lib/storage";
-import type { RoutingOptions } from "../lib/types";
+import type { ComputerMode, RoutingOptions } from "../lib/types";
+import { ComputerPicker } from "./ComputerPicker";
 import { EffortSegments } from "./EffortSegments";
 import { RoutingPicker, type PickerOption } from "./RoutingPicker";
 import { SearchPicker } from "./SearchPicker";
@@ -45,9 +46,12 @@ interface Props {
   onSearchChange: (id: string) => void;
   /** Whether the computer-access layer is on at all. Off = no button. */
   toolsOn: boolean;
-  /** May this one message run a program? Reading files needs no button. */
-  allowCommands: boolean;
-  onAllowCommandsChange: (on: boolean) => void;
+  /** Práce s počítačem, nebo jen chat — rozhodnutí pro tuhle zprávu. */
+  computer: ComputerMode;
+  onComputerChange: (mode: ComputerMode) => void;
+  /** Povolené složky a jestli se smí i zapisovat, aby menu říkalo pravdu. */
+  computerRoots: string[];
+  canWrite: boolean;
   /**
    * Where this box's unsent text is parked, one slot per conversation.
    * Switching threads or reloading the tab used to throw away a half-written
@@ -71,8 +75,10 @@ export function Composer({
   onEffortChange,
   onSearchChange,
   toolsOn,
-  allowCommands,
-  onAllowCommandsChange,
+  computer,
+  onComputerChange,
+  computerRoots,
+  canWrite,
   draftKey,
 }: Props) {
   const [value, setValue] = useState(() => loadSetting(draftKey, ""));
@@ -207,26 +213,18 @@ export function Composer({
                   onChange={onSearchChange}
                   disabled={disabled}
                 />
-                {/* Reading files is governed in the dialog; running a program
-                    is governed here, per message, because it is the only one
-                    of the two that changes something. */}
+                {/* Co se vůbec smí, drží dialog v nastavení. Tady se
+                    rozhoduje, jestli se toho u téhle zprávy má použít — a
+                    spuštění programu je třetí stupeň, ne druhé zaškrtávátko,
+                    protože bez čtení nedává smysl. */}
                 {toolsOn && (
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={allowCommands}
-                    className="picker-trigger terminal-toggle"
-                    onClick={() => onAllowCommandsChange(!allowCommands)}
+                  <ComputerPicker
+                    value={computer}
+                    onChange={onComputerChange}
+                    roots={computerRoots}
+                    canWrite={canWrite}
                     disabled={disabled}
-                    title={
-                      allowCommands
-                        ? "Tahle zpráva smí spouštět příkazy (git, python, npm, testy)"
-                        : "Povolit této zprávě spouštět příkazy"
-                    }
-                  >
-                    <SquareTerminal size={13} />
-                    <span>Příkazy</span>
-                  </button>
+                  />
                 )}
               </div>
             )}

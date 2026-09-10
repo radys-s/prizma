@@ -38,6 +38,7 @@ import { useHotkeys } from "./lib/useHotkeys";
 import type {
   AuthState,
   CompactInfo,
+  ComputerMode,
   Conversation,
   Message as ChatMessage,
   Provider,
@@ -52,6 +53,7 @@ const isMobile = () => window.matchMedia(MOBILE_QUERY).matches;
 const MODEL_KEY = "prizma.model";
 const EFFORT_KEY = "prizma.effort";
 const SEARCH_KEY = "prizma.search";
+const COMPUTER_KEY = "prizma.computer";
 
 /** Everything the tools section knows before the server has answered.
  *
@@ -208,11 +210,14 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   const [customInstructions, setCustomInstructions] = useState("");
   const [customInstructionsMax, setCustomInstructionsMax] = useState(2000);
   const [tools, setTools] = useState<ToolsSettings>(TOOLS_UNKNOWN);
-  // Deliberately *not* persisted, unlike model/effort/search. Letting the model
-  // run a program is a decision for one message; a remembered checkbox would
-  // make it the standing state of the app, which is a different thing to agree
-  // to. It resets to off on every reload, and that is the feature.
-  const [allowCommands, setAllowCommands] = useState(false);
+  // Pracovat s počítačem, nebo si jen povídat. Ukládá se jen "off"/"pc" —
+  // "commands" se schválně nepamatuje: model, který smí spustit program, je
+  // rozhodnutí pro jednu zprávu, a zapamatovaný stav by z něj udělal trvalý
+  // režim aplikace. Po reloadu je zpátky na "pc", což je ta samá vlastnost,
+  // jakou měl dřív per-zprávový přepínač příkazů.
+  const [computer, setComputer] = useState<ComputerMode>(
+    () => (loadSetting(COMPUTER_KEY, "off") === "pc" ? "pc" : "off")
+  );
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // What auto-compact folded away on the last run, or null when the whole
   // thread still fits. `folded` counts from the *start* of the conversation,
@@ -345,12 +350,15 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   // switch with it — otherwise the composer keeps offering a permission the
   // backend will refuse, and the refusal only shows up mid-answer.
   useEffect(() => {
-    if (!tools.local_tools) setAllowCommands(false);
+    if (!tools.local_tools) setComputer("off");
   }, [tools.local_tools]);
 
   useEffect(() => saveSetting(MODEL_KEY, model), [model]);
   useEffect(() => saveSetting(EFFORT_KEY, effort), [effort]);
   useEffect(() => saveSetting(SEARCH_KEY, search), [search]);
+  useEffect(() => {
+    if (computer !== "commands") saveSetting(COMPUTER_KEY, computer);
+  }, [computer]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -680,7 +688,8 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     search,
     // Belt and braces with the effect above: a request never carries the
     // permission when the layer it belongs to is switched off.
-    allow_commands: allowCommands && tools.local_tools,
+    use_tools: computer !== "off" && tools.local_tools,
+    allow_commands: computer === "commands" && tools.local_tools,
   });
 
   const sendMessage = async (text: string) => {
@@ -1000,8 +1009,10 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           onEffortChange={setEffort}
           onSearchChange={setSearch}
           toolsOn={tools.local_tools}
-          allowCommands={allowCommands}
-          onAllowCommandsChange={setAllowCommands}
+          computer={computer}
+          computerRoots={tools.tools_roots_effective}
+          canWrite={tools.local_write}
+          onComputerChange={setComputer}
           draftKey={draftKeyFor(currentId)}
         />
       </main>

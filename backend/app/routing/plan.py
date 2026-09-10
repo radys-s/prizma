@@ -141,6 +141,22 @@ use arrays, nested objects or markdown. Keep "directives" under 600 characters.
 Judge the task, not the user. If the message is vague, say so in "directives"
 and tell the answering model to state its assumption instead of guessing."""
 
+# Přidá se, jen když má odpovídající model u téhle zprávy nástroje na disk.
+#
+# Bez toho plánovač psal do "directives" pokyn „jasně uveď, že jako model nemáš
+# přístup k souborům v uživatelově složce“ — a odpovídající model ho poslechl,
+# přestože v témže požadavku nástroje na čtení disku dostal. Plánovač vidí jen
+# text zprávy, takže tohle je jediné místo, kde se to může dozvědět.
+_TOOLS_NOTE = """
+
+IMPORTANT — this turn only: the answering model has working tools that read the
+user's own computer (list a directory, read a file, search text) inside folders
+the user allowed. It is NOT limited to its training data here. Never write a
+directive saying it has no file access, cannot see the user's folders, or should
+ask the user to paste a file listing. When the question is about the user's
+files, projects or code, say in "directives" that it must look with the tools
+first and answer from what it actually read."""
+
 _BRIEF = '\nKeep "directives" to at most two sentences.'
 _FULL = (
     '\nWrite "directives" as three to six specific, actionable sentences in one '
@@ -261,9 +277,11 @@ def _build(data: dict, model: str, fallback: Plan) -> Plan:
 
 
 async def _ask_planner(
-    messages: list[dict], profile: EffortProfile, fallback: Plan
+    messages: list[dict], profile: EffortProfile, fallback: Plan, tools: bool
 ) -> Plan:
     system = _SYSTEM_PROMPT + (_FULL if profile.plan_detail == "full" else _BRIEF)
+    if tools:
+        system += _TOOLS_NOTE
     attempts = 0
 
     for provider in selector.planner_candidates():
@@ -297,9 +315,16 @@ async def _ask_planner(
 
 
 async def make_plan(
-    messages: list[dict], profile: EffortProfile, history_chars: int = 0
+    messages: list[dict],
+    profile: EffortProfile,
+    history_chars: int = 0,
+    tools: bool = False,
 ) -> Plan:
-    """Stage-one routing decision. Never raises — see the module docstring."""
+    """Stage-one routing decision. Never raises — see the module docstring.
+
+    `tools` says whether the answering model will get access to the user's
+    disk in this turn; see `_TOOLS_NOTE` for why the planner has to be told.
+    """
     last_user = next(
         (m["content"] for m in reversed(messages) if m.get("role") == "user"), ""
     )
@@ -310,7 +335,7 @@ async def make_plan(
 
     try:
         return await asyncio.wait_for(
-            _ask_planner(messages, profile, fallback), timeout=_PLANNER_BUDGET
+            _ask_planner(messages, profile, fallback, tools), timeout=_PLANNER_BUDGET
         )
     except asyncio.TimeoutError:
         log.warning("planning budget of %ss exhausted, using heuristic", _PLANNER_BUDGET)
