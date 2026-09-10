@@ -124,7 +124,9 @@
   --font-mono: "JetBrains Mono Variable", "Cascadia Code", "SF Mono", Consolas,
     "Liberation Mono", monospace;
 
-  --sidebar-w: 260px;
+  /* 272, ne 260. Dvanáct pixelů navíc plus jedno „⋯“ místo čtyř ikon v řádku
+     je celý rozdíl mezi „Přístup k int…“ a čitelným názvem konverzace. */
+  --sidebar-w: 272px;
   --content-max: 760px;
   --topbar-h: 58px;
 }

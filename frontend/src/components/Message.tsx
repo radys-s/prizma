@@ -82,6 +82,27 @@ function planChip(message: ChatMessage): string | null {
 }
 
 /**
+ * Proč zrovna tenhle model — celou větou, ne zkratkou.
+ *
+ * „kód · složité“ v šedém chipu je pravda, kterou umí přečíst jenom ten, kdo
+ * ví, že se pod ní skrývá rozhodnutí routeru. Věta „vybráno na kód“ říká
+ * totéž a nepotřebuje k tomu vysvětlivku. Stejná podmínka jako u `planChip`:
+ * bez plánovače by to byl odhad regulárního výrazu vydávaný za rozhodnutí.
+ */
+const CAPABILITY_REASON: Record<string, string> = {
+  fast: "vybráno na rychlost",
+  general: "vybráno na obecný dotaz",
+  code: "vybráno na kód",
+  creative: "vybráno na kreativní psaní",
+  long_context: "vybráno na dlouhý text",
+};
+
+function routeReason(message: ChatMessage): string | null {
+  if (!message.planner_model || !message.capability) return null;
+  return CAPABILITY_REASON[message.capability] ?? null;
+}
+
+/**
  * The substitution note. Live it arrives ready-made on the meta event; on a
  * reloaded conversation it is rebuilt from the two stored provider ids, so the
  * fact that a pin wasn't honoured survives a refresh instead of quietly
@@ -173,6 +194,9 @@ export function Message({
   const { copied: copiedFull, copy: copyFull } = useCopy();
   const rootRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<string | null>(null);
+  // Zavřené. Původ odpovědi je kontext, ne obsah — kdo se neptá, nemá to
+  // mít pod rukama rozbalené.
+  const [whyOpen, setWhyOpen] = useState(false);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -280,6 +304,7 @@ export function Message({
   }
 
   const chip = planChip(message);
+  const reason = routeReason(message);
   const note = substitutionNote(message, providerNames);
   const sources = message.sources ?? [];
   const parts = message.parts ?? [];
@@ -290,6 +315,11 @@ export function Message({
   // time, so "live" cannot collide with anything.
   const prefix = message.id != null ? `m${message.id}` : "live";
   const providerName = message.provider_id ? providerNames[message.provider_id] : undefined;
+  // Nemá smysl nabízet rozbor, který by byl prázdný. Dokud odpověď streamuje,
+  // navíc ještě není co rozebírat.
+  const hasWhy =
+    !message.streaming &&
+    Boolean(chip || message.model_name || message.substituted_from || message.search_mode);
   // A strip reads at a glance; past four cards it needs to be foldable again.
   const asStrip = sources.length > 0 && sources.length <= 4;
 
@@ -318,6 +348,10 @@ export function Message({
       onClick={onCitationClick}
       data-streaming={message.streaming ? "true" : undefined}
     >
+      {/* Věta, ne řada šedých chipů. „Gemini Flash · vybráno na kód“ přečte
+          kdokoli; „kód · složité“ pochopí jenom ten, kdo ví, že za tím stojí
+          rozhodnutí routeru. Podrobnosti jsou o jedno kliknutí dál — zajímají
+          jednou za čas, ale když se na ně někdo ptá, musí být kde vzít. */}
       <div className="model-badge">
         {message.streaming && !message.model_name ? (
           <span className="model-name pending">hledám model…</span>
@@ -334,11 +368,13 @@ export function Message({
             {providerName ?? message.model_name}
           </span>
         )}
-        {chip && (
-          <span className="plan-chip" title={message.goal || undefined}>
-            {chip}
+        {reason && (
+          <span className="model-reason" title={message.goal || undefined}>
+            {reason}
           </span>
         )}
+        {/* Zůstává chipem, protože to není popis routeru, ale tvrzení o
+            odpovědi: tohle jsem si přečetl na webu, ne vymyslel. */}
         {message.search_mode && (
           <span
             className="plan-chip search"
@@ -354,7 +390,66 @@ export function Message({
             po revizi
           </span>
         )}
+
+        {hasWhy && (
+          <button
+            type="button"
+            className="why-btn"
+            onClick={() => setWhyOpen((v) => !v)}
+            aria-expanded={whyOpen}
+            aria-controls={whyOpen ? `${prefix}-why` : undefined}
+          >
+            <ChevronRight size={12} className="why-caret" aria-hidden />
+            Proč tenhle model?
+          </button>
+        )}
       </div>
+
+      {hasWhy && whyOpen && (
+        <dl className="why-panel" id={`${prefix}-why`}>
+          {chip && (
+            <div className="why-item">
+              <dt>Rozbor</dt>
+              <dd>
+                {chip}
+                {message.goal && <span className="why-goal">{message.goal}</span>}
+              </dd>
+            </div>
+          )}
+          <div className="why-item">
+            <dt>Volba</dt>
+            <dd className="mono">{message.model_name ?? providerName ?? "—"}</dd>
+          </div>
+          {message.substituted_from && (
+            <div className="why-item">
+              <dt>Přeskočeno</dt>
+              <dd>
+                {(providerNames[message.substituted_from] ?? message.substituted_from).split(
+                  " ("
+                )[0]}{" "}
+                — nedostupný
+              </dd>
+            </div>
+          )}
+          {(message.search_mode || (message.tools ?? []).length > 0) && (
+            <div className="why-item">
+              <dt>Nástroje</dt>
+              <dd>
+                {[
+                  message.search_mode
+                    ? SEARCH_LABELS[message.search_mode] ?? message.search_mode
+                    : null,
+                  (message.tools ?? []).length > 0
+                    ? `${(message.tools ?? []).length}× práce s počítačem`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </dd>
+            </div>
+          )}
+        </dl>
+      )}
 
       {note && (
         <div className="meta-note">
