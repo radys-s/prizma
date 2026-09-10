@@ -35,6 +35,17 @@ class EffortProfile:
     # (routing/decompose.py). Costs one request per part out of a free
     # daily quota, so only the two deliberate tiers get it.
     decompose: bool = False
+    # Kolik kol volání nástrojů smí jedna odpověď spotřebovat, když má model
+    # přístup k počítači. Dřív to byla jedna konstanta (6) pro všechny tiery —
+    # a to je současně moc i málo: na „přečti soubor a shrň ho" je šest kol
+    # zbytečný strop, na „najdi, kde se to počítá, oprav to a spusť testy" jich
+    # je potřeba spíš dvacet. Reálná změna v repu se do šesti kol nevejde,
+    # takže model odpovídal z poloviny přečteného kódu.
+    #
+    # Strop musí zůstat, jen výš: model na free tieru se umí zacyklit na čtení
+    # téhož souboru dokola a bez stropu by požadavek běžel, dokud si toho někdo
+    # nevšimne. Každé kolo je navíc jeden request z denní kvóty.
+    tool_rounds: int = 6
 
 
 PROFILES: tuple[EffortProfile, ...] = (
@@ -48,6 +59,7 @@ PROFILES: tuple[EffortProfile, ...] = (
         max_tokens=1024,
         review_pass=False,
         decompose=False,
+        tool_rounds=4,
     ),
     EffortProfile(
         id="medium",
@@ -59,6 +71,7 @@ PROFILES: tuple[EffortProfile, ...] = (
         max_tokens=2048,
         review_pass=False,
         decompose=False,
+        tool_rounds=10,
     ),
     EffortProfile(
         id="pro",
@@ -70,6 +83,7 @@ PROFILES: tuple[EffortProfile, ...] = (
         max_tokens=4096,
         review_pass=False,
         decompose=True,
+        tool_rounds=20,
     ),
     EffortProfile(
         id="max",
@@ -81,6 +95,7 @@ PROFILES: tuple[EffortProfile, ...] = (
         max_tokens=8192,
         review_pass=True,
         decompose=True,
+        tool_rounds=30,
     ),
 )
 

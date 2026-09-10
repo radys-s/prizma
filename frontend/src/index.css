@@ -4540,6 +4540,102 @@ kbd.mono {
   font-size: 13.5px;
 }
 
+/* -------------------------------------------------- limit toast ---------- */
+
+/* Vlastní blok, ne varianta `.update-toast`: ta je jedna a odchází kliknutím,
+   tyhle jsou až tři a odcházejí samy, až doběhne odpočet. Sdílené by to
+   znamenalo tři podmíněné modifikátory nad pravidlem, které mělo jednu práci. */
+
+.limit-stack {
+  position: fixed;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 92; /* nad update-toast: tenhle mizí sám, ten druhý čeká na klik */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none; /* ať prázdný sloupec nestíní composer */
+}
+
+.limit-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(340px, calc(100vw - 32px));
+  padding: 11px 8px 11px 12px;
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  animation: pop-in var(--dur-fast) var(--ease);
+}
+
+.limit-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.limit-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.limit-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.limit-detail {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.limit-model {
+  /* Slug je pro toho, kdo si chce model najít v pickeru — proto tlumeně
+     a monospace, ale pořád čitelně. */
+  margin-top: 2px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.limit-close {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  color: var(--text-faint);
+}
+
+@media (max-width: 560px) {
+  .limit-stack {
+    right: max(12px, env(safe-area-inset-right));
+    left: max(12px, env(safe-area-inset-left));
+    /* Nad composerem, ne přes něj: na telefonu je spodní pás celý jeho. */
+    bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+
+  .limit-toast {
+    width: 100%;
+  }
+}
+
 /* ------------------------------------------------ safe areas (PWA) ------- */
 
 /* Installed to a home screen the app runs full-bleed under the notch and the

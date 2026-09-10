@@ -5,6 +5,7 @@ import { CompactDivider } from "./components/CompactDivider";
 import { Composer, type ComposerHandle } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
 import { PrizmaMark } from "./components/Logo";
+import { LimitToasts, type LimitNoticeItem } from "./components/LimitToast";
 import { LoginScreen } from "./components/LoginScreen";
 import { Message } from "./components/Message";
 import { ProvidersModal } from "./components/ProvidersModal";
@@ -228,6 +229,10 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   // thread still fits. `folded` counts from the *start* of the conversation,
   // so it doubles as the index of the first message still sent verbatim.
   const [compact, setCompact] = useState<CompactInfo | null>(null);
+  // Vyčerpané limity providerů. Nepatří k žádné konkrétní zprávě — router
+  // přepne jinam a odpověď dojde — takže žijí vedle vlákna a přežijí i to,
+  // že uživatel mezitím přepne konverzaci.
+  const [limits, setLimits] = useState<LimitNoticeItem[]>([]);
   // Incremented by the ↑ shortcut; the last user message opens its editor
   // when the number changes. See `editNonce` in Message.
   const [editNonce, setEditNonce] = useState(0);
@@ -415,6 +420,10 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     reasonPendingRef.current = "";
     return chunk;
   };
+
+  const dismissLimit = useCallback((id: string) => {
+    setLimits((prev) => prev.filter((item) => item.id !== id));
+  }, []);
 
   const endStream = () => {
     setStreaming(false);
@@ -640,6 +649,25 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
         }))
       );
       endStream();
+    },
+    // Schválně bez `stale()`: limit platí pro celý proces, ne pro jeden běh.
+    // Zahodit ho jen proto, že uživatel mezitím poslal další zprávu, by
+    // znamenalo zamlčet přesně tu informaci, kvůli které se oznámení dělalo.
+    onLimit: (notice) => {
+      setLimits((prev) => {
+        const id = `${notice.provider}:${notice.model}`;
+        const item: LimitNoticeItem = {
+          id,
+          provider: notice.provider,
+          model: notice.model,
+          wait: notice.wait,
+          until: notice.retryAfter > 0 ? Date.now() + notice.retryAfter * 1000 : null,
+        };
+        // Stejný provider podruhé přepíše sám sebe; tři oznámení najednou už
+        // nikdo nečte, takže se drží jen nejnovější.
+        const rest = prev.filter((existing) => existing.id !== id);
+        return [...rest, item].slice(-3);
+      });
     },
     onError: (msg) => {
       if (stale()) return;
@@ -1046,6 +1074,8 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
       )}
 
       {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+
+      <LimitToasts items={limits} onDismiss={dismissLimit} />
 
       {paletteOpen && (
         <CommandPalette

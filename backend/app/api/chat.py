@@ -378,6 +378,10 @@ def _stream_response(
                 if ev.type in ("tool_call", "tool_result"):
                     payload["tool"] = ev.tool
                     payload["tool_ok"] = ev.tool_ok
+                if ev.type == "limit":
+                    # Sekundy zvlášť vedle hotové věty: UI z nich dělá odpočet
+                    # a věta ho po chvíli přestane odpovídat.
+                    payload["retry_after"] = ev.retry_after
                 if ev.type == "done":
                     in_review = False
                     revised = ev.revised

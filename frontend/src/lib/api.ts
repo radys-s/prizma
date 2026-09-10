@@ -439,10 +439,28 @@ export interface StreamHandlers {
   onReviewStart?: () => void;
   /** The rewrite failed — put the draft back. */
   onReviewAbort?: () => void;
+  /**
+   * Provider hlásí vyčerpaný limit. Odpověď tím nekončí — chodí uprostřed
+   * streamu a řetěz pokračuje dál — takže se to nemá vypisovat do bubliny,
+   * ale zvlášť jako oznámení.
+   */
+  onLimit?: (notice: LimitNotice) => void;
   /** `stats` is absent when the stream was aborted before the done event. */
   onDone?: (revised: boolean, stats?: DoneStats) => void;
   onError?: (message: string) => void;
   onUnauthenticated?: () => void;
+}
+
+/** Vyčerpaný limit u jednoho providera, tak jak se ukáže uživateli. */
+export interface LimitNotice {
+  /** Jméno providera bez modelu v závorce, např. „Groq". */
+  provider: string;
+  /** Slug modelu, který na limit narazil. */
+  model: string;
+  /** Hotová věta „za 8 min", nebo prázdno, když provider čas neřekl. */
+  wait: string;
+  /** Totéž v sekundách, 0 když se to neví. */
+  retryAfter: number;
 }
 
 /** What an answer cost. Both are best-effort: not every provider reports usage. */
@@ -644,6 +662,7 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
     fallback?: boolean;
     tool?: string;
     tool_ok?: boolean;
+    retry_after?: number;
   };
   try {
     payload = JSON.parse(data);
@@ -727,6 +746,14 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
       break;
     case "review_abort":
       handlers.onReviewAbort?.();
+      break;
+    case "limit":
+      handlers.onLimit?.({
+        provider: payload.content ?? "",
+        model: payload.model_name ?? "",
+        wait: payload.note ?? "",
+        retryAfter: payload.retry_after ?? 0,
+      });
       break;
     case "done":
       handlers.onDone?.(payload.revised === true, {
