@@ -210,6 +210,11 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   const [customInstructions, setCustomInstructions] = useState("");
   const [customInstructionsMax, setCustomInstructionsMax] = useState(2000);
   const [tools, setTools] = useState<ToolsSettings>(TOOLS_UNKNOWN);
+  // Dorazila už odpověď ze serveru? `TOOLS_UNKNOWN` je schválně samé "ne",
+  // takže "vypnuto" a "ještě nevím" vypadají stejně — a bez tohohle příznaku
+  // se ta půlvteřina neznalosti chová jako vypnutá funkce a smaže uloženou
+  // volbu „Počítač“ dřív, než se stihne načíst.
+  const [toolsKnown, setToolsKnown] = useState(false);
   // Pracovat s počítačem, nebo si jen povídat. Ukládá se jen "off"/"pc" —
   // "commands" se schválně nepamatuje: model, který smí spustit program, je
   // rozhodnutí pro jednu zprávu, a zapamatovaný stav by z něj udělal trvalý
@@ -343,6 +348,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
         tools_roots_effective: settings.tools_roots_effective,
         tools_supported: settings.tools_supported,
       });
+      setToolsKnown(true);
     });
   }, [guard]);
 
@@ -350,8 +356,8 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   // switch with it — otherwise the composer keeps offering a permission the
   // backend will refuse, and the refusal only shows up mid-answer.
   useEffect(() => {
-    if (!tools.local_tools) setComputer("off");
-  }, [tools.local_tools]);
+    if (toolsKnown && !tools.local_tools) setComputer("off");
+  }, [toolsKnown, tools.local_tools]);
 
   useEffect(() => saveSetting(MODEL_KEY, model), [model]);
   useEffect(() => saveSetting(EFFORT_KEY, effort), [effort]);
