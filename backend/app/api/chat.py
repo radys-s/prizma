@@ -19,6 +19,7 @@ from app.routing import plan as planning
 from app.routing import research as researching
 from app.routing import selector
 from app.routing import titles
+from app.tools import registry as tooling
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +68,15 @@ class ChatRequest(BaseModel):
     # on purpose — `research.resolve_mode` falls back to "auto" for anything it
     # does not recognise, so a stale value in localStorage costs nothing.
     search: str = researching.DEFAULT_MODE
+    # Přepínač „počítač / jen chat“ z composeru. Nastavení v dialogu říká, co
+    # se vůbec smí; tohle říká, jestli se toho má u téhle zprávy použít. Když
+    # je vypnutý, model nedostane nástroje ani se o nich nedozví — otázka na
+    # obecnou znalost nemá začínat výpisem složky.
+    #
+    # Výchozí True: nastavení je ta přísnější brána a je vypnuté, dokud ho
+    # uživatel nezapne, takže klient, který pole neposílá (curl, test), se
+    # chová jako dřív.
+    use_tools: bool = True
     # Smí model u téhle zprávy spustit příkaz? Per-zprávu schválně: čtení
     # souborů se zapíná jednou v nastavení, ale spuštění programu má uživatel
     # povolit tehdy, kdy ho čeká — ne trvale a na všechno.
@@ -78,6 +88,7 @@ class RegenerateRequest(BaseModel):
     model: str | None = None
     effort: str = effort_tiers.DEFAULT_EFFORT
     search: str = researching.DEFAULT_MODE
+    use_tools: bool = True
     allow_commands: bool = False
 
 
@@ -135,6 +146,18 @@ def _resolve_profile(effort: str, search: str) -> effort_tiers.EffortProfile:
     return profile
 
 
+def _tools_requested(req: RegenerateRequest | ChatRequest) -> bool:
+    """Chce tahle zpráva pracovat s počítačem?
+
+    Dvě podmínky, ne jedna. `use_tools` je přepínač z composeru — rozhodnutí
+    pro tuhle zprávu. `registry.available()` je nastavení aplikace, a to je ta
+    přísnější brána: bez něj se nástroje nenabídnou, ať si klient posílá co
+    chce. Ptát se tady, a ne až v `stream_chat`, má jediný důvod — plánovač
+    běží dřív a musí dostat stejnou odpověď.
+    """
+    return req.use_tools and tooling.available()
+
+
 def _stream_response(
     conversation_id: int,
     messages: list[dict],
@@ -145,6 +168,7 @@ def _stream_response(
     compact_info: compacting.CompactInfo | None = None,
     replaces: tuple[int, ...] = (),
     name_from: str | None = None,
+    use_tools: bool = True,
     allow_commands: bool = False,
 ) -> EventSourceResponse:
     """Streams one answer and persists it, even if the client hangs up early.
@@ -316,6 +340,7 @@ def _stream_response(
                 pinned=pinned,
                 findings=findings,
                 breakdown=breakdown,
+                use_tools=use_tools,
                 allow_commands=allow_commands,
             ):
                 if ev.type == "review_start":
@@ -489,7 +514,10 @@ async def chat_stream(
     messages, compact_info = await compacting.prepare(session, conversation, rows)
     history_chars = sum(len(m["content"]) for m in messages[:-1])
     profile = _resolve_profile(req.effort, req.search)
-    plan = await planning.make_plan(messages, profile, history_chars=history_chars)
+    tools_on = _tools_requested(req)
+    plan = await planning.make_plan(
+        messages, profile, history_chars=history_chars, tools=tools_on
+    )
     depth = researching.resolve_mode(req.search, plan.needs_search)
     return _stream_response(
         conversation_id,
@@ -500,6 +528,7 @@ async def chat_stream(
         depth,
         compact_info=compact_info,
         name_from=name_from,
+        use_tools=tools_on,
         allow_commands=req.allow_commands,
     )
 
@@ -541,7 +570,10 @@ async def chat_regenerate(
     messages, compact_info = await compacting.prepare(session, conversation, rows)
     history_chars = sum(len(m["content"]) for m in messages[:-1])
     profile = _resolve_profile(req.effort, req.search)
-    plan = await planning.make_plan(messages, profile, history_chars=history_chars)
+    tools_on = _tools_requested(req)
+    plan = await planning.make_plan(
+        messages, profile, history_chars=history_chars, tools=tools_on
+    )
     depth = researching.resolve_mode(req.search, plan.needs_search)
     return _stream_response(
         req.conversation_id,
@@ -552,6 +584,7 @@ async def chat_regenerate(
         depth,
         compact_info=compact_info,
         replaces=tuple(doomed),
+        use_tools=tools_on,
         allow_commands=req.allow_commands,
     )
 
@@ -608,7 +641,10 @@ async def chat_edit(
     messages, compact_info = await compacting.prepare(session, conversation, rows)
     history_chars = sum(len(m["content"]) for m in messages[:-1])
     profile = _resolve_profile(req.effort, req.search)
-    plan = await planning.make_plan(messages, profile, history_chars=history_chars)
+    tools_on = _tools_requested(req)
+    plan = await planning.make_plan(
+        messages, profile, history_chars=history_chars, tools=tools_on
+    )
     depth = researching.resolve_mode(req.search, plan.needs_search)
     return _stream_response(
         req.conversation_id,
@@ -618,5 +654,6 @@ async def chat_edit(
         _pinned(req.model),
         depth,
         compact_info=compact_info,
+        use_tools=tools_on,
         allow_commands=req.allow_commands,
     )

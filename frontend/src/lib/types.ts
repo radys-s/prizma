@@ -329,6 +329,15 @@ export interface AppSettings {
   tools_supported: boolean;
 }
 
+/**
+ * Co má tahle zpráva dělat s počítačem — přepínač v composeru.
+ *
+ * "off" pracuje jako obyčejný chat: model nedostane nástroje ani se o nich
+ * nedozví. "pc" mu je nabídne v mezích nastavení, "commands" k tomu přidá
+ * spouštění programů, a to jen pro jednu zprávu.
+ */
+export type ComputerMode = "off" | "pc" | "commands";
+
 /** The slice of `AppSettings` the tools section owns. */
 export type ToolsSettings = Pick<
   AppSettings,

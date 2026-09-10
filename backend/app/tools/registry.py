@@ -200,6 +200,55 @@ def specs(*, allow_commands: bool) -> list[dict]:
     return out
 
 
+def system_message(*, allow_commands: bool) -> dict | None:
+    """Kontext k nástrojům, nebo None, když se žádné nenabízejí.
+
+    Bez seznamu povolených kořenů model nemá kde začít. Na „co mám ve složce,
+    do které vidíš?" odpovídal, že žádnou složku nevidí — a měl pravdu:
+    `list_dir` chce absolutní cestu a nikde se nedozvěděl jedinou, kterou smí
+    použít. Kořeny se proto čtou při každém požadavku, ne jednou při importu:
+    jsou to uživatelská nastavení a mění se za běhu.
+    """
+    if not available():
+        return None
+
+    allowed = "\n".join(f"- {p}" for p in sandbox.roots())
+    parts = [
+        "Máš přístup k počítači uživatele (Windows) přes nástroje. Používej je, "
+        "když se odpověď dá ověřit místo odhadu — přečti soubor, o kterém je "
+        "řeč, než o něm začneš mluvit. Nikdy netvrď, že na soubory nevidíš.",
+        "Smíš pracovat jen v těchto složkách a kdekoli pod nimi:\n" + allowed,
+        "Když se uživatel ptá na „svoji složku“ nebo „svoje projekty“ a "
+        "nejmenuje cestu, myslí tímhle právě ty kořeny výš — vypiš je "
+        "(`list_dir`) a pokračuj dovnitř. Cesty piš vždy absolutní; když nevíš, "
+        "kde soubor je, najdi ho (`search_text`), nehádej.",
+        "Nekomentuj, co se chystáš udělat — zavolej nástroj. Až budeš mít "
+        "výsledky, odpověz na původní otázku a opři se o to, cos viděl, ne "
+        "o obecné znalosti.",
+        "Když nástroj vrátí „Odmítnuto“, je to hranice nastavená uživatelem. "
+        "Nezkoušej ji obejít jinou cestou; napiš, co bys potřeboval.",
+    ]
+    # Obě poznámky mluví jen o tom, co chybí, a hned dodávají, co funguje.
+    # První verze říkala u příkazů jen „nesmíš, ať si to uživatel zapne“ — a
+    # model to vzal jako podmínku celého úkolu: na dotaz „co mám ve složce“
+    # odpověděl, že bez režimu „Počítač + příkazy“ nemůže vypsat ani soubory.
+    # Přitom `list_dir` měl připojený a fungoval.
+    if not can_write():
+        parts.append(
+            "Zapisovat do souborů u téhle zprávy nesmíš; čtení funguje "
+            "normálně. Změny napiš do odpovědi jako návrh."
+        )
+    if not allow_commands:
+        parts.append(
+            "Spouštět programy u téhle zprávy nesmíš. Výpis složky, čtení "
+            "souboru i hledání v textu fungují — na ty příkazy nepotřebuješ "
+            "a nikdy kvůli nim o povolení nežádej. Teprve když by úkol bez "
+            "spuštění programu nešel dokončit, dodej na konec odpovědi, že by "
+            "pomohl režim „Počítač + příkazy“."
+        )
+    return {"role": "system", "content": "\n\n".join(parts)}
+
+
 def _list_dir(args: dict) -> str:
     path = sandbox.resolve(str(args.get("path", "")))
     if not path.is_dir():

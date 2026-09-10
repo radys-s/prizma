@@ -474,23 +474,6 @@ def _custom_instructions() -> dict | None:
 # a bez stropu by to znamenalo požadavek běžící, dokud si toho někdo nevšimne.
 MAX_TOOL_ROUNDS = 6
 
-# Kontext k nástrojům. Bez něj model hádá — píše relativní cesty, které nemá
-# k čemu vztáhnout, a ptá se na svolení, které už dostal.
-_TOOLS_SYSTEM = (
-    "Máš přístup k počítači uživatele (Windows) přes nástroje. Používej je, "
-    "když se odpověď dá ověřit místo odhadu — přečti soubor, o kterém je řeč, "
-    "než o něm začneš mluvit.\n\n"
-    "Cesty piš vždy absolutní. Když nevíš, kde soubor je, najdi ho "
-    "(`search_text` nebo `list_dir`), nehádej.\n\n"
-    "Nekomentuj, co se chystáš udělat — zavolej nástroj. Až budeš mít výsledky, "
-    "odpověz na původní otázku a opři se o to, cos viděl, ne o obecné znalosti.\n\n"
-    "Když nástroj vrátí „Odmítnuto“, je to hranice nastavená uživatelem. "
-    "Nezkoušej ji obejít jinou cestou; napiš, co bys potřeboval."
-)
-
-_TOOLS_MESSAGE: dict = {"role": "system", "content": _TOOLS_SYSTEM}
-
-
 def _tools_for(model: str, tools: list[dict]) -> list[dict] | None:
     """Nástroje pro tenhle slug, nebo None, když je neumí.
 
@@ -516,6 +499,7 @@ async def stream_chat(
     pinned: str | None = None,
     findings: researching.Findings | None = None,
     breakdown: decomposing.Breakdown | None = None,
+    use_tools: bool = True,
     allow_commands: bool = False,
 ) -> AsyncIterator[StreamEvent]:
     providers = selector.candidates(plan.capability, plan.complexity, pinned=pinned)
@@ -533,19 +517,26 @@ async def stream_chat(
     # a later system turn is the one the model follows — while the planner,
     # further back still, cannot talk the model out of "always answer in
     # English". The subtask results sit last, closest to the question, because
-    # they are the most specific material of the five.
+    # they are the most specific material of the six.
     #
     # The user's own message stays exactly as they typed it, always; see the
     # docstrings of routing/plan.py, routing/research.py and
     # routing/decompose.py.
-    tools = tooling.specs(allow_commands=allow_commands)
+    #
+    # Nástroje jsou v pořadí až za plánovačem, ačkoli jsou obecnější než on.
+    # Důvod je měřený, ne estetický: plánovač o nich neví nic jistého (dozví se
+    # to z `tools=` v `make_plan`, ale je to malý model na free tieru) a uměl
+    # napsat pokyn „jasně uveď, že jako model nemáš přístup k souborům“. Jako
+    # pozdější systémová zpráva by vyhrál — a model by tvrdil, že na disk
+    # nevidí, s nástroji připojenými k témuž požadavku.
+    tools = tooling.specs(allow_commands=allow_commands) if use_tools else []
     preamble = [
         m
         for m in (
             _HOUSE_MESSAGE,
             _custom_instructions(),
-            _TOOLS_MESSAGE if tools else None,
             planning.system_message(plan),
+            tooling.system_message(allow_commands=allow_commands) if tools else None,
             researching.system_message(findings) if findings else None,
             decomposing.system_message(breakdown) if breakdown else None,
         )
