@@ -41,6 +41,7 @@ from app.providers import keystore, model_health
 # Both lists live in `providers/failures.py` since the fan-out in
 # `routing/decompose.py` turned out to need the same distinction and got it
 # wrong: it parked a slug for an hour over a timeout, and that mark is global.
+from app.providers import failures
 from app.providers.failures import COOLDOWN_ERRORS as _COOLDOWN_ERRORS
 from app.providers.failures import DEAD_MODEL_ERRORS as _DEAD_MODEL_ERRORS
 from app.providers.registry import ProviderModel, by_id
@@ -68,6 +69,8 @@ class StreamEvent:
     # "review_start" the draft is done; a revised version is about to stream
     #                in its place (max tier only)
     # "review_abort" the revision failed; the draft the user already sees stands
+    # "limit"       provider hlásí vyčerpaný limit; `content` je jeho jméno,
+    #               `note` čitelné „za 8 min" a `retry_after` totéž v sekundách
     # "error"       nothing usable came back
     # "done"        finished
     type: str
@@ -83,6 +86,9 @@ class StreamEvent:
     # Local tool events only: which tool, and whether it was allowed to run.
     tool: str = ""
     tool_ok: bool = True
+    # "limit" only: za kolik sekund má smysl providera zkusit znovu, 0 když to
+    # sám neřekl. UI z toho dělá odpočet v oznámení.
+    retry_after: float = 0.0
 
 
 @dataclass
@@ -118,6 +124,9 @@ def _humanize(attempt: Attempt) -> str:
     if isinstance(exc, litellm.NotFoundError):
         return f"{name}: model {attempt.model} už neexistuje."
     if isinstance(exc, litellm.RateLimitError):
+        wait = failures.humanize_wait(failures.retry_after_seconds(exc))
+        if wait:
+            return f"{name}: vyčerpaný limit, znovu {wait}."
         return f"{name}: vyčerpaný limit."
     if isinstance(exc, (litellm.Timeout, litellm.APIConnectionError)):
         return f"{name}: nepodařilo se spojit."
@@ -468,11 +477,11 @@ def _custom_instructions() -> dict | None:
     }
 
 
-# Kolik kol nástrojů smí jedna odpověď spotřebovat. Šest stačí na „vypiš složku,
-# přečti dva soubory, spusť testy, oprav to" a zároveň je to strop pro model,
-# který se zacyklí na čtení téhož souboru dokola — což se na free tieru stává
-# a bez stropu by to znamenalo požadavek běžící, dokud si toho někdo nevšimne.
-MAX_TOOL_ROUNDS = 6
+# Kolik kol před vyčerpáním rozpočtu dostane model upozornění, že se blíží ke
+# stropu. Bez něj čte soubory až do posledního kola a odpověď pak píše ve
+# chvíli, kdy už nemá čím ověřit, co zjistil — což je přesně ten stav, ve
+# kterém modely na free tieru začínají tvrdit, že „změna je hotová".
+_TOOL_BUDGET_WARNING = 3
 
 def _tools_for(model: str, tools: list[dict]) -> list[dict] | None:
     """Nástroje pro tenhle slug, nebo None, když je neumí.
@@ -568,7 +577,12 @@ async def stream_chat(
                 # rozdělaného nástrojového dialogu předchozího modelu.
                 history = list(outgoing)
 
-                for round_number in range(MAX_TOOL_ROUNDS + 1):
+                # Rozpočet kol podle tieru, ne jedna konstanta pro všechno:
+                # `light` má stačit na jedno nahlédnutí, `max` na skutečnou
+                # opravu v repu. Viz `routing/effort.py`.
+                budget = max(1, profile.tool_rounds)
+
+                for round_number in range(budget + 1):
                     calls: dict[int, dict] = {}
                     round_text = ""
                     async for kind, delta in _try_stream(
@@ -608,7 +622,7 @@ async def stream_chat(
                         started = True
                         yield _meta(provider, model, pinned_provider)
 
-                    if round_number == MAX_TOOL_ROUNDS:
+                    if round_number == budget:
                         # Došla kola. Modelu se to řekne jako výsledek, ne
                         # mlčením: dostane ještě jedno kolo bez nástrojů, ve
                         # kterém má odpovědět z toho, co už zjistil.
@@ -670,6 +684,19 @@ async def stream_chat(
                             }
                         )
 
+                    remaining = budget - round_number - 1
+                    if 0 < remaining <= _TOOL_BUDGET_WARNING:
+                        history.append(
+                            {
+                                "role": "system",
+                                "content": (
+                                    f"Zbývají ti {remaining} volání nástrojů. "
+                                    "Dodělej, co je rozdělané, ověř to a "
+                                    "odpověz — na nové odbočky rozpočet není."
+                                ),
+                            }
+                        )
+
                 if not spoke:
                     # Clean finish with zero content — treat as a failed attempt
                     # so we fall through instead of showing an empty answer.
@@ -720,6 +747,26 @@ async def stream_chat(
                 if isinstance(exc, _DEAD_MODEL_ERRORS):
                     model_health.mark_dead(model)
                     continue  # same provider, next slug
+                if isinstance(exc, litellm.RateLimitError):
+                    # Vyčerpaný limit je jediné selhání, které má uživatel
+                    # vidět i tehdy, když odpověď nakonec přijde odjinud —
+                    # jinak se o něm dozví až z toho, že mu za hodinu chybí
+                    # nejlepší model a neví proč. Ostatní chyby v řetězu jsou
+                    # provozní šum a patří do logu.
+                    wait = failures.retry_after_seconds(exc)
+                    if wait:
+                        selector.mark_cooldown(provider.id, wait)
+                    else:
+                        selector.mark_cooldown(provider.id)
+                    yield StreamEvent(
+                        type="limit",
+                        provider_id=provider.id,
+                        model_name=model,
+                        content=_short(provider),
+                        note=failures.humanize_wait(wait),
+                        retry_after=wait or 0.0,
+                    )
+                    break
                 if isinstance(exc, _COOLDOWN_ERRORS):
                     selector.mark_cooldown(provider.id)
                 break  # provider-level problem — stop trying its other slugs
