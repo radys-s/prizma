@@ -21,8 +21,10 @@ kde se to rozhoduje.
 """
 
 import asyncio
+import fnmatch
 import json
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -352,6 +354,34 @@ def _read_file(args: dict) -> str:
     return sandbox.clip(f"{path}\n{numbered}{tail}")
 
 
+def _glob_matcher(pattern: str):
+    """Z masky od modelu udělá funkci `relativní cesta -> bere se?`.
+
+    Maska se schválně **nepoužívá k procházení** stromu. `rglob("../../*")`
+    vypadá nevinně, ale vyjde z povolených kořenů ven — a jediné, co pak stojí
+    mezi obsahem souboru a cizím providerem, jsou denylisty, které o soukromých
+    složkách mimo projekt nic netuší. Maska se proto použije až na jména
+    souborů, které našel průchod začínající v ověřeném kořeni.
+
+    Odmítnutá maska je informace pro model: `..` ani absolutní cesta v `glob`
+    nedávají smysl, od výběru složky je argument `path`.
+    """
+    raw = pattern.strip()
+    normalized = raw.replace("\\", "/")
+    if not raw:
+        normalized = "*"
+    if ".." in normalized.split("/") or normalized.startswith("/") or ":" in normalized:
+        raise sandbox.Denied(
+            f"Maska `{pattern}` obsahuje cestu. `glob` je jen jméno souboru "
+            "(např. `*.py`); složku vyber argumentem `path`."
+        )
+    if "/" not in normalized:
+        return lambda rel: fnmatch.fnmatch(rel.rsplit("/", 1)[-1], normalized)
+    # `**/` na začátku znamená „v libovolné hloubce, tedy i přímo tady".
+    bare = normalized[3:] if normalized.startswith("**/") else normalized
+    return lambda rel: fnmatch.fnmatch(rel, normalized) or fnmatch.fnmatch(rel, bare)
+
+
 def _search_text(args: dict) -> str:
     root = sandbox.resolve(str(args.get("path", "")))
     if not root.is_dir():
@@ -360,30 +390,48 @@ def _search_text(args: dict) -> str:
         needle = re.compile(str(args.get("pattern", "")), re.IGNORECASE)
     except re.error as exc:
         raise sandbox.Denied(f"Neplatný regulární výraz: {exc}") from exc
-    pattern = str(args.get("glob") or "*")
+    matches = _glob_matcher(str(args.get("glob") or "*"))
+    skip_dirs = {d.lower() for d in sandbox.DENIED_DIRS}
 
     hits: list[str] = []
-    for file in sorted(root.rglob(pattern)):
+    # `os.walk` místo `rglob`, ať se zavřené složky dají **odříznout cestou**.
+    # `rglob` nejdřív celý strom zmaterializuje a teprve výsledek se filtruje,
+    # takže `node_modules` a `.venv` se projdou do posledního souboru jen proto,
+    # aby se pak všechny zahodily — v tomhle repu je to desítky tisíc souborů.
+    for folder, dirs, files in os.walk(root):
         if len(hits) >= MAX_MATCHES:
             break
-        if not file.is_file():
-            continue
-        lowered = {p.lower() for p in file.parts}
-        if lowered & {d.lower() for d in sandbox.DENIED_DIRS}:
-            continue
-        if file.name.lower() in sandbox.DENIED_NAMES:
-            continue
-        if file.suffix.lower() in sandbox.DENIED_SUFFIXES:
-            continue
-        try:
-            content = file.read_text(encoding="utf-8", errors="strict")
-        except (OSError, UnicodeDecodeError):
-            continue  # binárka nebo zamčený soubor — hledá se v textu
-        for number, line in enumerate(content.splitlines(), start=1):
-            if needle.search(line):
-                hits.append(f"{file}:{number}: {line.strip()[:200]}")
-                if len(hits) >= MAX_MATCHES:
-                    break
+        dirs[:] = sorted(d for d in dirs if d.lower() not in skip_dirs)
+        here = Path(folder)
+        for name in sorted(files):
+            if len(hits) >= MAX_MATCHES:
+                break
+            file = here / name
+            try:
+                relative = file.relative_to(root).as_posix()
+            except ValueError:
+                continue
+            if not matches(relative):
+                continue
+            if sandbox.denied(file):
+                continue
+            # Symlink uvnitř kořene může mířit kamkoli. Kontrola se proto dělá
+            # na skutečném cíli, ne na cestě, po které se k němu došlo.
+            try:
+                real = file.resolve()
+            except OSError:
+                continue
+            if not sandbox.contains(real) or sandbox.denied(real):
+                continue
+            try:
+                content = file.read_text(encoding="utf-8", errors="strict")
+            except (OSError, UnicodeDecodeError):
+                continue  # binárka nebo zamčený soubor — hledá se v textu
+            for number, line in enumerate(content.splitlines(), start=1):
+                if needle.search(line):
+                    hits.append(f"{file}:{number}: {line.strip()[:200]}")
+                    if len(hits) >= MAX_MATCHES:
+                        break
     if not hits:
         return f"Žádná shoda pro `{args.get('pattern')}` v {root}."
     return sandbox.clip("\n".join(hits))
@@ -463,6 +511,25 @@ def _edit_file(args: dict) -> str:
     return f"Soubor {path} upraven {where}."
 
 
+def _dominant_newline(path: Path) -> str | None:
+    """Jaké konce řádků v tom souboru převažují, nebo None u nového souboru.
+
+    Model vypisuje obsah vždycky s `\\n` — o tom, co je na disku, se z ničeho
+    nedozví. Přepis souboru by tím na Windows tiše změnil konce řádků v celém
+    souboru a v diffu by vypadal jako přepsaný celý. Stejné pravidlo jako
+    v `_edit_file`, jen aplikované na celý obsah místo na `old_string`.
+    """
+    try:
+        with path.open(encoding="utf-8", newline="", errors="replace") as handle:
+            existing = handle.read(65_536)
+    except OSError:
+        return None
+    crlf = existing.count("\r\n")
+    if crlf and crlf >= existing.count("\n") - crlf:
+        return "\r\n"
+    return "\n"
+
+
 def _write_file(args: dict) -> str:
     path = sandbox.resolve(str(args.get("path", "")), must_exist=False)
     content = args.get("content")
@@ -470,9 +537,18 @@ def _write_file(args: dict) -> str:
         raise sandbox.Denied("Chybí obsah souboru.")
     if not path.parent.exists():
         raise sandbox.Denied(f"Složka {path.parent} neexistuje.")
-    existed = path.exists()
+    existed = path.is_file()
+
+    # Nejdřív se text srovná na jedny konce řádků, pak se zapíše `newline=""`.
+    # Bez toho druhého překládá `write_text` každé `\n` na `os.linesep`, takže
+    # z CRLF souboru udělá soubor s `\r\r\n` na každém řádku — obsah, který
+    # žádný editor nezobrazí správně a `edit_file` v něm pak nic nenajde.
+    normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+    ending = _dominant_newline(path) if existed else "\n"
+    if ending == "\r\n":
+        normalized = normalized.replace("\n", "\r\n")
     try:
-        path.write_text(content, encoding="utf-8")
+        path.write_text(normalized, encoding="utf-8", newline="")
     except OSError as exc:
         raise sandbox.Denied(f"Zápis selhal: {exc}") from exc
     verb = "přepsán" if existed else "vytvořen"

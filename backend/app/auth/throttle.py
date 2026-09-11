@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlmodel import Session, select
 
+from app.config import settings
 from app.models.auth import LoginAttempt, utcnow
 
 GLOBAL_SCOPE = "global"
@@ -110,16 +111,31 @@ def record_failure(session: Session, ip: str) -> int:
 
 
 def clear_failures(session: Session, ip: str) -> None:
-    """A successful sign-in clears this caller — but not the global bucket.
+    """A successful sign-in clears this caller — a na veřejné adrese jen jeho.
 
     Clearing global on success would hand an attacker a reset button: anyone
     who knows *any* valid way in could wipe the counter that is bounding their
     guesses at another. The global bucket is drained by time instead — see
     `GLOBAL_QUIET_RESET_SECONDS`.
+
+    Lokálně ale tenhle argument neplatí a obrací se proti uživateli. Na
+    `127.0.0.1` je „kdokoli s platným přístupem" a „ten, kdo hádá" **tentýž
+    člověk**: obě počítadla sčítají jeho překlepy. Třináct špatných kódů během
+    šesti hodin proto zamkne aplikaci na dvě hodiny a *správný* kód to
+    neodemkne — jediná obrana je smazat řádek v databázi. Chráněný stroj je
+    přitom ten, u kterého uživatel zrovna sedí; útočník, na kterého je globální
+    počítadlo myšlené, se na něj nedostane.
     """
-    row = session.get(LoginAttempt, ip)
-    if row is not None:
-        session.delete(row)
+    scopes = [ip]
+    if not settings.public_mode:
+        scopes.append(GLOBAL_SCOPE)
+    changed = False
+    for scope in scopes:
+        row = session.get(LoginAttempt, scope)
+        if row is not None:
+            session.delete(row)
+            changed = True
+    if changed:
         session.commit()
 
 

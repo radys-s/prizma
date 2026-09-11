@@ -320,3 +320,36 @@ def test_the_allowed_host_is_derived_from_the_public_url_when_unset():
         public_base_url="https://prizma.onrender.com", allowed_hosts=["custom.example.com"]
     )
     assert explicit.effective_allowed_hosts() == ["custom.example.com"]
+
+
+def test_locally_a_correct_code_unlocks_the_global_bucket(db, monkeypatch):
+    """Na `127.0.0.1` počítají obě počítadla téhož člověka.
+
+    Globální bucket má zdržet rozprostřené hádání proti veřejné adrese. Lokálně
+    ale „kdokoli s platným přístupem" a „ten, kdo hádá" je tentýž uživatel, tak
+    mu třináct překlepů za šest hodin zamklo aplikaci na dvě hodiny — a správný
+    kód s tím nehnul, protože `clear_failures` se globálního bucketu zásadně
+    nedotýkal. Jediná cesta ven vedla přes ruční zásah do databáze.
+    """
+    throttle.reset(db)
+    monkeypatch.setattr(throttle.settings, "public_mode", False)
+    for _ in range(throttle.GLOBAL_FREE_ATTEMPTS + 3):
+        throttle.record_failure(db, "127.0.0.1")
+    assert throttle.lockout_remaining(db, "127.0.0.1") > 0
+
+    throttle.clear_failures(db, "127.0.0.1")
+    assert throttle.lockout_remaining(db, "127.0.0.1") == 0
+    assert db.get(LoginAttempt, throttle.GLOBAL_SCOPE) is None
+
+
+def test_publicly_a_correct_code_still_leaves_the_global_bucket_alone(db, monkeypatch):
+    """Na veřejné adrese by to byl reset button pro útočníka."""
+    throttle.reset(db)
+    monkeypatch.setattr(throttle.settings, "public_mode", True)
+    for _ in range(throttle.GLOBAL_FREE_ATTEMPTS + 3):
+        throttle.record_failure(db, "10.0.0.7")
+
+    throttle.clear_failures(db, "10.0.0.7")
+    assert db.get(LoginAttempt, "10.0.0.7") is None
+    assert db.get(LoginAttempt, throttle.GLOBAL_SCOPE) is not None
+    throttle.reset(db)
