@@ -1,7 +1,7 @@
 import logging
 from urllib.parse import urlsplit, urlunsplit
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.config import settings
@@ -75,6 +75,28 @@ def _build_engine():
 
 
 engine = _build_engine()
+
+
+if engine.dialect.name == "sqlite":
+
+    @event.listens_for(engine, "connect")
+    def _enforce_foreign_keys(dbapi_connection, _record) -> None:
+        """SQLite cizí klíče ignoruje, dokud se o to neřekne u každého spojení.
+
+        Bez tohohle je `foreign_key="conversation.id"` jen komentář: zpráva se
+        dá uložit do vlákna, které už neexistuje. Přesně to hrozí na konci
+        streamu, kde se odpověď ukládá dlouho poté, co požadavek doběhl —
+        a osiřelý řádek se pak nezobrazí, nesmaže a nikdo ho nenajde.
+
+        Postgres to dělá vždycky, takže tenhle listener srovnává lokální běh
+        s tím nasazeným; rozdíl v chování databáze mezi vývojem a produkcí je
+        ta nejhorší kategorie chyby.
+        """
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
 
 # Columns added to `message` after the table already existed in the wild.
 # `SQLModel.metadata.create_all()` creates missing *tables* and nothing else —

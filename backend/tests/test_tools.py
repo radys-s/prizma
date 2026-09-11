@@ -128,3 +128,96 @@ def test_commands_need_permission_even_when_the_model_asks(monkeypatch):
         registry.run("run_command", {"command": "git status"}, allow_commands=False)
     )
     assert "není u téhle zprávy povolené" in answer
+
+
+# --- search_text: maska od modelu není cesta -------------------------------
+#
+# `root.rglob(pattern)` bral masku tak, jak přišla, a nalezené soubory už
+# nekontroloval proti kořenům — `glob="../../**/*.txt"` tím četl cokoli na
+# disku a posílal to cizímu providerovi. Denylisty, které zbyly, o soukromých
+# složkách mimo projekt nic nevědí.
+
+
+@pytest.mark.parametrize("glob", ["../**/*.txt", "../../secrets/*", "/etc/*", "C:/Windows/*"])
+def test_search_glob_that_is_a_path_is_refused(root, glob):
+    with pytest.raises(sandbox.Denied):
+        registry._search_text({"path": str(root), "pattern": "heslo", "glob": glob})
+
+
+def test_search_never_leaves_the_root(root, tmp_path_factory):
+    outside = tmp_path_factory.mktemp("jinde")
+    (outside / "tajne.txt").write_text("heslo: 1234", encoding="utf-8")
+    (root / "vlastni.txt").write_text("heslo: vlastni", encoding="utf-8")
+
+    found = registry._search_text(
+        {"path": str(root), "pattern": "heslo", "glob": "**/*.txt"}
+    )
+    assert "vlastni.txt" in found
+    assert "tajne.txt" not in found
+
+
+def test_search_prunes_closed_folders(root):
+    (root / "node_modules").mkdir()
+    (root / "node_modules" / "modul.js").write_text("heslo", encoding="utf-8")
+    (root / "vlastni.js").write_text("heslo", encoding="utf-8")
+
+    found = registry._search_text(
+        {"path": str(root), "pattern": "heslo", "glob": "*.js"}
+    )
+    assert "vlastni.js" in found
+    assert "node_modules" not in found
+
+
+def test_search_finds_matches_in_subfolders(root):
+    (root / "app").mkdir()
+    (root / "app" / "main.py").write_text("def hledej():\n    pass\n", encoding="utf-8")
+    found = registry._search_text(
+        {"path": str(root), "pattern": "hledej", "glob": "*.py"}
+    )
+    assert "main.py" in found
+
+
+# --- write_file: konce řádků se nesmí měnit --------------------------------
+
+
+@pytest.fixture()
+def writable(monkeypatch):
+    monkeypatch.setattr(registry, "available", lambda: True)
+    monkeypatch.setattr(registry, "can_write", lambda: True)
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (b"stary\r\nobsah\r\n", b"novy\r\nobsah\r\n"),
+        (b"stary\nobsah\n", b"novy\nobsah\n"),
+    ],
+)
+def test_write_file_keeps_the_files_line_endings(root, writable, before, after):
+    """`write_text` bez `newline=""` překládá `\n` na `os.linesep`.
+
+    Na Windows z CRLF souboru udělá `\r\r\n` na každém řádku — obsah, který
+    nikdo nepřečte a ve kterém `edit_file` už nic nenajde.
+    """
+    target = root / "soubor.txt"
+    target.write_bytes(before)
+    asyncio.run(
+        registry.run(
+            "write_file",
+            {"path": str(target), "content": "novy\nobsah\n"},
+            allow_commands=False,
+        )
+    )
+    assert target.read_bytes() == after
+
+
+def test_write_file_creates_new_files_with_lf(root, writable):
+    target = root / "novy.txt"
+    asyncio.run(
+        registry.run(
+            "write_file",
+            {"path": str(target), "content": "a\nb\n"},
+            allow_commands=False,
+        )
+    )
+    assert target.read_bytes() == b"a\nb\n"

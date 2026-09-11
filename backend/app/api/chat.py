@@ -95,9 +95,10 @@ class RegenerateRequest(BaseModel):
 class EditRequest(RegenerateRequest):
     """Rewrite one user turn and re-run the thread from there.
 
-    Everything after the edited message is deleted, because an answer to a
+    Everything after the edited message goes away, because an answer to a
     question that no longer exists is worse than no answer: it reads as if the
-    model replied to the new text and got it wrong.
+    model replied to the new text and got it wrong. It goes away *after* the
+    new answer exists, not before — see `chat_edit`.
     """
 
     message_id: int
@@ -412,60 +413,60 @@ def _stream_response(
             # ukazující na neexistující vlákno: nikdy se nezobrazí, nikdy se
             # nesmaže a drží cizí klíč na záznam, který už není.
             #
-            # Vlastní krátká session, ne `return` uvnitř `finally` — ten by
-            # spolkl i GeneratorExit, kterým se generátor zavírá při odpojení
-            # klienta, a asyncio by to ohlásilo jako „async generator ignored
-            # GeneratorExit“. Cena je jeden SELECT na konci streamu.
+            # Kontrola i zápis jsou schválně v **jedné** session a jedné
+            # transakci. Dokud byly ve dvou, vešlo se mezi ně smazání vlákna
+            # a osiřelý řádek vznikl přesně tím způsobem, kterému má kontrola
+            # zabránit. Vlastní session (ne `Depends`) proto, že ta z požadavku
+            # je po odpojení klienta už zavřená; `return` uvnitř `finally` by
+            # zase spolkl `GeneratorExit`, kterým se generátor ukončuje.
             if assistant_text:
-                with Session(engine) as check_session:
-                    if check_session.get(Conversation, conversation_id) is None:
+                with Session(engine) as save_session:
+                    if save_session.get(Conversation, conversation_id) is None:
                         log.info(
                             "odpověď zahozena — konverzace %s mezitím smazána",
                             conversation_id,
                         )
                         assistant_text = ""
-
-            if assistant_text:
-                with Session(engine) as save_session:
                     # Only now, with a real answer in hand, do the superseded
                     # ones go away. Deleting them up front — which is what
                     # regenerate used to do — meant a run where every provider
                     # was down destroyed an answer the user already had.
-                    for stale_id in replaces:
+                    for stale_id in replaces if assistant_text else ():
                         stale = save_session.get(Message, stale_id)
                         if stale is not None:
                             save_session.delete(stale)
-                    save_session.add(
-                        Message(
-                            conversation_id=conversation_id,
-                            role="assistant",
-                            content=assistant_text,
-                            provider_id=used_provider,
-                            model_name=used_model,
-                            capability=plan.capability,
-                            complexity=plan.complexity,
-                            effort=profile.id,
-                            planner_model=plan.planner_model,
-                            substituted_from=substituted_from,
-                            revised=revised,
-                            # Only on success: the badge means "this answer
-                            # used the web", and a search that aborted did not.
-                            search_mode=depth if findings else None,
-                            sources=researching.sources_json(findings),
-                            parts=decomposing.parts_json(breakdown),
-                            # Ořezané: uvažování bývá delší než odpověď a je to
-                            # doprovodný materiál, ne obsah vlákna. Do dalšího
-                            # kola se neposílá — historie se skládá z `content`.
-                            reasoning=reasoning[:_REASONING_MAX] or None,
-                            reasoning_ms=reasoning_ms or None,
-                            # Measured even when the stream was cut short, so a
-                            # stopped answer still reports the time it took.
-                            latency_ms=latency_ms
-                            or int((time.monotonic() - started_at) * 1000),
-                            tokens=tokens or None,
+                    if assistant_text:
+                        save_session.add(
+                            Message(
+                                conversation_id=conversation_id,
+                                role="assistant",
+                                content=assistant_text,
+                                provider_id=used_provider,
+                                model_name=used_model,
+                                capability=plan.capability,
+                                complexity=plan.complexity,
+                                effort=profile.id,
+                                planner_model=plan.planner_model,
+                                substituted_from=substituted_from,
+                                revised=revised,
+                                # Only on success: the badge means "this answer
+                                # used the web", and a search that aborted did not.
+                                search_mode=depth if findings else None,
+                                sources=researching.sources_json(findings),
+                                parts=decomposing.parts_json(breakdown),
+                                # Ořezané: uvažování bývá delší než odpověď a je to
+                                # doprovodný materiál, ne obsah vlákna. Do dalšího
+                                # kola se neposílá — historie se skládá z `content`.
+                                reasoning=reasoning[:_REASONING_MAX] or None,
+                                reasoning_ms=reasoning_ms or None,
+                                # Measured even when the stream was cut short, so a
+                                # stopped answer still reports the time it took.
+                                latency_ms=latency_ms
+                                or int((time.monotonic() - started_at) * 1000),
+                                tokens=tokens or None,
+                            )
                         )
-                    )
-                    save_session.commit()
+                        save_session.commit()
 
                 if name_from:
                     # Fire and forget. The stream is over; making the user wait
@@ -605,7 +606,8 @@ async def chat_edit(
     Same shape as regenerate — the planner runs again on the new text, so an
     edited question can legitimately land on a different provider. The two
     differ only in what gets dropped: regenerate throws away the trailing
-    answers, this throws away everything after the edited turn.
+    answers, this throws away everything after the edited turn. Both drop it
+    only once there is a new answer to put in its place.
     """
     try:
         selector.require_minimum()
@@ -629,8 +631,14 @@ async def chat_edit(
     if not content:
         raise HTTPException(status_code=422, detail="Prázdná zpráva.")
 
-    for stale in rows[index + 1 :]:
-        session.delete(stale)
+    # Only the edited question is rewritten right away — jeho nový text je to,
+    # co se posílá modelu, takže bez zápisu by se po reloadu vrátila stará
+    # otázka k nové odpovědi. Zbytek vlákna se **nemaže teď**: kdyby se všichni
+    # provideři ukázali jako vyčerpaní, úprava deset kol zpátky by nenávratně
+    # smazala deset zpráv a nedala za ně nic. Jde do `replaces`, takže zmizí
+    # ve stejném okamžiku, kdy existuje odpověď, která je nahradí — přesně jak
+    # to dělá regenerate.
+    doomed = tuple(m.id for m in rows[index + 1 :] if m.id is not None)
     rows[index].content = content
     session.add(rows[index])
     session.commit()
@@ -658,6 +666,7 @@ async def chat_edit(
         _pinned(req.model),
         depth,
         compact_info=compact_info,
+        replaces=doomed,
         use_tools=tools_on,
         allow_commands=req.allow_commands,
     )

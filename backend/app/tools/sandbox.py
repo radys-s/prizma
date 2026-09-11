@@ -140,6 +140,28 @@ def _inside(path: Path, root: Path) -> bool:
     return True
 
 
+def contains(path: Path) -> bool:
+    """Leží ta cesta v některém z povolených kořenů?
+
+    Existuje zvlášť od `resolve()`, protože nástroj, který si cesty vyrábí sám
+    — `search_text` prochází strom a dostává hotové `Path` — potřebuje tutéž
+    odpověď, ale nemá řetězec od modelu, který by se dal znovu rozbalovat.
+    Dokud tahle půlka `resolve()` nešla zavolat samostatně, druhý nástroj si ji
+    opsal a při opisování z ní vypadla právě kontrola kořenů.
+    """
+    return any(_inside(path, root) for root in roots())
+
+
+def denied(path: Path) -> bool:
+    """Spadá cesta do některého denylistu? (Bez kontroly kořenů — viz `contains`.)"""
+    lowered = {p.lower() for p in path.parts}
+    if lowered & {d.lower() for d in DENIED_DIRS}:
+        return True
+    if path.name.lower() in DENIED_NAMES:
+        return True
+    return path.suffix.lower() in DENIED_SUFFIXES
+
+
 def resolve(raw: str, *, must_exist: bool = True) -> Path:
     """Cesta z argumentů modelu na skutečnou cestu, nebo `Denied`.
 
@@ -156,9 +178,8 @@ def resolve(raw: str, *, must_exist: bool = True) -> Path:
     except OSError as exc:
         raise Denied(f"Neplatná cesta: {exc}") from exc
 
-    allowed = roots()
-    if not any(_inside(path, root) for root in allowed):
-        where = ", ".join(str(r) for r in allowed)
+    if not contains(path):
+        where = ", ".join(str(r) for r in roots())
         raise Denied(
             f"Cesta {path} je mimo povolené složky. Agent smí pracovat jen v: {where}"
         )
