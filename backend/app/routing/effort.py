@@ -47,6 +47,16 @@ class EffortProfile:
     # nevšimne. Každé kolo je navíc jeden request z denní kvóty.
     tool_rounds: int = 6
 
+    # Kolik znaků smí historie nástrojového dialogu zabrat, než se starší
+    # výsledky nahradí poznámkou o jejich délce. Vlastní číslo vedle
+    # `tool_rounds`, protože strop kol a strop kontextu jsou dvě různé věci:
+    # `compact.py` srovná konverzaci pod 12 000 znaků a pak do ní smyčka
+    # přisype až 20 000 znaků za každý výsledek nástroje. Na free tieru je okno
+    # 8k–32k tokenů, takže kolem pátého kola začne provider vracet 4xx uprostřed
+    # rozepsané odpovědi — a protože model už něco „řekl", nepřepne se ani na
+    # náhradní. Uživatel dostane surovou chybu místo odpovědi.
+    tool_context_chars: int = 24_000
+
 
 PROFILES: tuple[EffortProfile, ...] = (
     EffortProfile(
@@ -60,6 +70,7 @@ PROFILES: tuple[EffortProfile, ...] = (
         review_pass=False,
         decompose=False,
         tool_rounds=4,
+        tool_context_chars=12_000,
     ),
     EffortProfile(
         id="medium",
@@ -72,6 +83,7 @@ PROFILES: tuple[EffortProfile, ...] = (
         review_pass=False,
         decompose=False,
         tool_rounds=10,
+        tool_context_chars=24_000,
     ),
     EffortProfile(
         id="pro",
@@ -84,6 +96,7 @@ PROFILES: tuple[EffortProfile, ...] = (
         review_pass=False,
         decompose=True,
         tool_rounds=20,
+        tool_context_chars=40_000,
     ),
     EffortProfile(
         id="max",
@@ -96,6 +109,7 @@ PROFILES: tuple[EffortProfile, ...] = (
         review_pass=True,
         decompose=True,
         tool_rounds=30,
+        tool_context_chars=60_000,
     ),
 )
 
