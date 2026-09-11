@@ -501,6 +501,49 @@ def _tools_for(model: str, tools: list[dict]) -> list[dict] | None:
     return tools
 
 
+# Kolik posledních kol zůstane vždycky celých. Dvě proto, že model se běžně
+# odkazuje na to, co četl minule („v tom souboru výš…“), a jedno kolo zpět by
+# tuhle vazbu přetrhlo. Starší výsledky jsou naopak většinou odbočky, ke kterým
+# se už nikdo nevrací.
+_TOOL_HISTORY_KEEP_ROUNDS = 2
+
+
+def _trim_tool_history(history: list[dict], budget_chars: int) -> None:
+    """Ořeže starší výsledky nástrojů, ať se historie vejde do okna. Mění `history`.
+
+    `compact.py` srovná konverzaci pod svůj práh **před** smyčkou a pak už do ní
+    nikdo nesahá. Do téže historie přitom přibývá až `MAX_OUTPUT_CHARS` (20 000)
+    znaků za každý výsledek nástroje, a kol je u `max` třicet. Na free tieru je
+    okno 8k–32k tokenů, takže někde kolem pátého kola začne provider vracet 4xx
+    — a protože model už něco „řekl", `stream_chat` se nepřepne na náhradní
+    a uživatel dostane surovou chybu providera doprostřed rozepsané odpovědi.
+
+    Ořezávají se jen `tool` zprávy, a to od nejstarší. Systémová preambule,
+    původní konverzace ani vlastní volání nástrojů se nemažou: bez nich by
+    historie přestala dávat smysl (volání bez výsledku některé providery rovnou
+    odmítnou) a ušetřilo by se na tom málo — objem je v návratových hodnotách.
+    """
+    total = sum(len(str(m.get("content") or "")) for m in history)
+    if total <= budget_chars:
+        return
+
+    # Indexy výsledků nástrojů od nejstaršího, bez posledních pár kol.
+    tool_at = [i for i, m in enumerate(history) if m.get("role") == "tool"]
+    trimmable = tool_at[: max(0, len(tool_at) - _TOOL_HISTORY_KEEP_ROUNDS)]
+    for index in trimmable:
+        if total <= budget_chars:
+            return
+        message = history[index]
+        original = str(message.get("content") or "")
+        if original.startswith("[výsledek nástroje zkrácen"):
+            continue
+        message["content"] = (
+            f"[výsledek nástroje zkrácen — {len(original)} znaků. "
+            "Zavolej ho znovu, pokud ho ještě potřebuješ.]"
+        )
+        total -= len(original) - len(message["content"])
+
+
 async def stream_chat(
     messages: list[dict],
     plan: planning.Plan,
@@ -562,6 +605,12 @@ async def stream_chat(
 
     for provider in providers:
         for model in model_health.usable_models(provider.models):
+            # Vlastní počítadlo tokenů pro každý pokus. Dokud bylo jedno pro
+            # celý průchod, provider, který stihl poslat usage a pak spadl,
+            # nechal svoje tokeny ležet — a připsaly se modelu, který nakonec
+            # odpověděl. Cena odpovědi je jediné číslo, podle kterého se dá
+            # posoudit, jestli se router vyplácí, takže nesmí mít cizí příměs.
+            usage = {}
             started = False
             # `started` říká „už jsme ohlásili model", `spoke` „přišel text
             # odpovědi". Od chvíle, kdy se streamuje i uvažování, to nejsou
@@ -582,7 +631,14 @@ async def stream_chat(
                 # opravu v repu. Viz `routing/effort.py`.
                 budget = max(1, profile.tool_rounds)
 
-                for round_number in range(budget + 1):
+                # `budget + 2`, ne `+ 1`. Poslední iterace je to kolo **bez
+                # nástrojů**, ve kterém má model odpovědět z toho, co zjistil.
+                # S `+ 1` se zpráva o vyčerpaném limitu přidala do historie,
+                # `usable_tools` se vynulovalo a `continue` skočil do vyčerpané
+                # `range` — kolo se nikdy neodehrálo. Požadavek, který ještě
+                # v posledním kole volal nástroj, tak skončil s `spoke == False`,
+                # zahodil třicet kol práce a šel na další model od začátku.
+                for round_number in range(budget + 2):
                     calls: dict[int, dict] = {}
                     round_text = ""
                     async for kind, delta in _try_stream(
@@ -605,6 +661,14 @@ async def stream_chat(
                                 type="reason", provider_id=provider.id, content=delta
                             )
                             continue
+                        if not round_text and draft:
+                            # Předchozí kolo něco napsalo a mezi ním a tímhle
+                            # textem je jen volání nástroje. Bez oddělovače se
+                            # v uložené odpovědi slepí „Podívám se…" a samotná
+                            # odpověď do jedné věty.
+                            yield StreamEvent(
+                                type="delta", provider_id=provider.id, content="\n\n"
+                            )
                         spoke = True
                         round_text += delta
                         draft += delta
@@ -613,6 +677,10 @@ async def stream_chat(
                         )
 
                     if not calls:
+                        # Poslední kolo je odpověď. Revize dostane ji, ne
+                        # slepenec z komentářů ke každému volání nástroje.
+                        if round_text.strip():
+                            draft = round_text
                         break
 
                     # Volání bez jediného tokenu textu je běžné — model rovnou
@@ -672,17 +740,21 @@ async def stream_chat(
                             type="tool_result",
                             provider_id=provider.id,
                             tool=call["name"],
-                            tool_ok=not result.startswith("Odmítnuto:"),
-                            content=result[:400],
+                            tool_ok=result.ok,
+                            content=result.text[:400],
                         )
                         history.append(
                             {
                                 "role": "tool",
                                 "tool_call_id": call["id"] or f"call_{index}",
                                 "name": call["name"],
-                                "content": result,
+                                "content": result.text,
                             }
                         )
+
+                    # Výsledky nástrojů rostou rychleji než cokoli jiného
+                    # v historii a nikdo je po `compact.py` znovu neořezává.
+                    _trim_tool_history(history, profile.tool_context_chars)
 
                     remaining = budget - round_number - 1
                     if 0 < remaining <= _TOOL_BUDGET_WARNING:

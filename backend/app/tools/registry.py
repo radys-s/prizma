@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from app import settings_store
@@ -603,8 +604,38 @@ _HANDLERS = {
 # ne jen v `specs()` — model si jméno funkce může vymyslet a některé vymyslí.
 _WRITING_TOOLS = frozenset({"edit_file", "write_file"})
 
+# Kolik nejdéle smí trvat jedno volání nástroje, které není příkaz. Průchod
+# stromem nebo čtení souboru na síťovém disku se dá zaseknout na minuty a
+# `asyncio.to_thread` na to nemá žádný strop — odpověď pak visí, dokud uživatel
+# nezavře záložku. Třicet sekund je nad každým běžným čtením o řád.
+TOOL_TIMEOUT = 30
 
-async def run(name: str, arguments: str | dict, *, allow_commands: bool) -> str:
+
+@dataclass(frozen=True)
+class ToolResult:
+    """Text pro model plus to, co z textu nejde poznat: povedlo se to?
+
+    `client.py` dřív hádal z textu — `not result.startswith("Odmítnuto:")` —
+    a `run()` přitom vrací šest různých vět o selhání. Pět z nich se tím
+    vyhodnotilo jako úspěch, takže u volání, které neudělalo vůbec nic, svítila
+    v UI zelená fajfka. Příznak patří tam, kde vzniká.
+    """
+
+    text: str
+    ok: bool = True
+
+    def __str__(self) -> str:  # ať se dá výsledek pořád vypsat rovnou
+        return self.text
+
+    def __contains__(self, item: str) -> bool:
+        return item in self.text
+
+
+def _failed(text: str) -> ToolResult:
+    return ToolResult(text, ok=False)
+
+
+async def run(name: str, arguments: str | dict, *, allow_commands: bool) -> ToolResult:
     """Provede jedno volání nástroje a vrátí text, který uvidí model.
 
     Nikdy nevyhazuje výjimku. Chyba nástroje je pro model informace jako každá
@@ -616,36 +647,46 @@ async def run(name: str, arguments: str | dict, *, allow_commands: bool) -> str:
     viděl v historii konverzace, ale v aktuálním požadavku už nabídnutý není.
     """
     if not available():
-        return "Práce se soubory je vypnutá v nastavení aplikace."
+        return _failed("Práce se soubory je vypnutá v nastavení aplikace.")
 
     args = arguments
     if isinstance(args, str):
         try:
             args = json.loads(args or "{}")
         except json.JSONDecodeError:
-            return f"Argumenty pro `{name}` nejsou platný JSON: {arguments!r}"
+            return _failed(f"Argumenty pro `{name}` nejsou platný JSON: {arguments!r}")
     if not isinstance(args, dict):
-        return f"Argumenty pro `{name}` musí být objekt."
+        return _failed(f"Argumenty pro `{name}` musí být objekt.")
 
     try:
         if name == "run_command":
             if not allow_commands:
-                return (
+                return _failed(
                     "Spouštění příkazů není u téhle zprávy povolené. Uživatel ho "
                     "zapíná přepínačem u pole pro psaní."
                 )
-            return await _run_command(args)
+            return ToolResult(await _run_command(args))
         if name in _WRITING_TOOLS and not can_write():
-            return "Zápis do souborů je vypnutý v nastavení aplikace."
+            return _failed("Zápis do souborů je vypnutý v nastavení aplikace.")
         handler = _HANDLERS.get(name)
         if handler is None:
-            return f"Nástroj `{name}` neexistuje."
-        return await asyncio.to_thread(handler, args)
+            return _failed(f"Nástroj `{name}` neexistuje.")
+        return ToolResult(
+            await asyncio.wait_for(asyncio.to_thread(handler, args), TOOL_TIMEOUT)
+        )
+    except asyncio.TimeoutError:
+        # Vrací se jako běžný výsledek, ne jako pád odpovědi: model má z čeho
+        # poznat, že se má zeptat úžeji, a zbytek konverzace pokračuje.
+        log.warning("nástroj %s se nevešel do %s s", name, TOOL_TIMEOUT)
+        return _failed(
+            f"Nástroj `{name}` nestihl doběhnout do {TOOL_TIMEOUT} s. "
+            "Zkus užší cestu nebo konkrétnější masku souborů."
+        )
     except sandbox.Denied as exc:
-        return f"Odmítnuto: {exc}"
+        return _failed(f"Odmítnuto: {exc}")
     except Exception as exc:  # noqa: BLE001 - výsledek nástroje, ne pád odpovědi
         log.warning("nástroj %s selhal: %s: %s", name, type(exc).__name__, exc)
-        return f"Nástroj `{name}` selhal: {exc}"
+        return _failed(f"Nástroj `{name}` selhal: {exc}")
 
 
 def summarize(name: str, arguments: str | dict) -> str:
