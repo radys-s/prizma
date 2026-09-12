@@ -42,7 +42,9 @@ import {
 import { applyTheme, loadTheme, saveTheme, watchSystem, type Theme } from "./lib/theme";
 import { useAutoScroll } from "./lib/useAutoScroll";
 import { anyOverlayOpen } from "./lib/useFocusTrap";
+import { speakable } from "./lib/speakable";
 import { useHotkeys } from "./lib/useHotkeys";
+import { useStableCallback } from "./lib/useStableCallback";
 import type {
   AuthState,
   CompactInfo,
@@ -284,7 +286,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
    */
   const loadIdRef = useRef(0);
   const composerRef = useRef<ComposerHandle>(null);
-  const { ref: scrollRef, pinned, scrollToBottom } = useAutoScroll(messages);
+  const { ref: scrollRef, pinned, scrollToBottom } = useAutoScroll(messages, currentId);
 
   // Deltas arrive per token; batching them into one render per frame keeps
   // markdown re-parsing off the hot path.
@@ -492,20 +494,31 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
    * jen dokončené věty, a to, co zbylo, až na konci.
    */
   const liveBufRef = useRef("");
+  /** Jestli právě běží blok kódu — fence přijde v jiném chunku než jeho konec. */
+  const liveFenceRef = useRef(false);
+
+  const say = (raw: string) => {
+    const { said, fenced } = speakable(raw, liveFenceRef.current);
+    liveFenceRef.current = fenced;
+    if (said) setAnnouncement(said);
+  };
 
   const announceSentences = (chunk: string) => {
     liveBufRef.current += chunk;
     const cut = liveBufRef.current.search(/[.!?…:\n][^.!?…:\n]*$/);
     if (cut < 0) return;
-    const said = liveBufRef.current.slice(0, cut + 1).trim();
+    const said = liveBufRef.current.slice(0, cut + 1);
     liveBufRef.current = liveBufRef.current.slice(cut + 1);
-    if (said) setAnnouncement(said);
+    say(said);
   };
 
   const announceRest = () => {
-    const rest = liveBufRef.current.trim();
+    const rest = liveBufRef.current;
     liveBufRef.current = "";
-    if (rest) setAnnouncement(rest);
+    if (rest.trim()) say(rest);
+    // Konec odpovědi zavře i blok, který model nedokončil — jinak by se
+    // příští odpověď začala předčítat jako pokračování kódu.
+    liveFenceRef.current = false;
   };
 
   const dismissLimit = useCallback((id: string) => {
@@ -822,6 +835,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     setCompact(null);
     providerRef.current = null;
     liveBufRef.current = "";
+    liveFenceRef.current = false;
     setAnnouncement("");
     setMessages((prev) => [...prev, { role: "assistant", content: "", streaming: true }]);
     await start(makeHandlers(runId), controller.signal);
@@ -839,14 +853,14 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     allow_commands: computer === "commands" && tools.local_tools,
   });
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = useStableCallback(async (text: string) => {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     const conversationId = currentId;
     const picked = choice();
     await runStream((h, signal) => streamChat(text, conversationId, picked, h, signal));
-  };
+  });
 
-  const regenerateLast = async () => {
+  const regenerateLast = useStableCallback(async () => {
     if (currentId === null || streaming) return;
     setMessages((prev) => {
       const next = [...prev];
@@ -856,7 +870,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     const conversationId = currentId;
     const picked = choice();
     await runStream((h, signal) => regenerate(conversationId, picked, h, signal));
-  };
+  });
 
   /**
    * Rewrites a user message and re-runs the thread from there.
@@ -866,19 +880,22 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
    * leaving the old answers on screen would show a conversation that no longer
    * exists anywhere.
    */
-  const editMessageAt = async (index: number, content: string) => {
-    const target = messages[index];
-    if (currentId === null || streaming || target?.id == null) return;
+  const editMessageAt = useStableCallback(async (target: ChatMessage, content: string) => {
+    if (currentId === null || streaming || target.id == null) return;
     const messageId = target.id;
+    // Podle id, ne podle pořadí: obsluha se předává jako jedna sdílená funkce,
+    // takže index z doby renderu by tu stejně nebyl k mání.
+    const index = messages.findIndex((m) => m.id === messageId);
+    if (index < 0) return;
     setMessages(messages.slice(0, index).concat({ ...target, content }));
     const conversationId = currentId;
     const picked = choice();
     await runStream((h, signal) =>
       editMessage(conversationId, messageId, content, picked, h, signal)
     );
-  };
+  });
 
-  const stopStreaming = () => abortRef.current?.abort();
+  const stopStreaming = useStableCallback(() => abortRef.current?.abort());
 
   /**
    * Stop *and* disown the current run.
@@ -888,7 +905,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
    * run id moves on, so nothing still in flight can write into the list — which
    * also means nothing will clear `streaming` for us, hence doing it here.
    */
-  const discardStream = () => {
+  const discardStream = useStableCallback(() => {
     runIdRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
@@ -898,28 +915,28 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     providerRef.current = null;
     setStreaming(false);
     setCompact(null);
-  };
+  });
 
   /* -------------------------------------------------------- conversations */
 
-  const selectConversation = async (id: number) => {
+  const selectConversation = useStableCallback(async (id: number) => {
     discardStream();
     const loadId = (loadIdRef.current += 1);
     setCurrentId(id);
     const data = await guard(() => fetchConversation(id));
     if (data && loadIdRef.current === loadId) setMessages(data.messages);
     if (isMobile()) setSidebarOpen(false);
-  };
+  });
 
-  const newConversation = () => {
+  const newConversation = useStableCallback(() => {
     discardStream();
     loadIdRef.current += 1;
     setCurrentId(null);
     setMessages([]);
     if (isMobile()) setSidebarOpen(false);
-  };
+  });
 
-  const removeConversation = async (id: number) => {
+  const removeConversation = useStableCallback(async (id: number) => {
     // Smazat vlákno, do kterého se právě píše, je běžná věc — a bez tohohle
     // řádku po něm zůstal zamčený composer: běh nikdo nepřevzal, takže
     // `streaming` shodil až `onDone` o půl minuty později. `discardStream`
@@ -934,33 +951,33 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
       setCurrentId(null);
       setMessages([]);
     }
-  };
+  });
 
-  const rename = async (id: number, title: string) => {
+  const rename = useStableCallback(async (id: number, title: string) => {
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title } : c)));
     try {
       await guard(() => renameConversation(id, title));
     } catch {
       reloadConversations(); // server said no — resync
     }
-  };
+  });
 
   /** Optimistic, then resynced: the server owns the order pinning changes. */
-  const pin = async (id: number, pinned: boolean) => {
+  const pin = useStableCallback(async (id: number, pinned: boolean) => {
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, pinned } : c)));
     try {
       await guard(() => pinConversation(id, pinned));
     } finally {
       reloadConversations();
     }
-  };
+  });
 
   /**
    * Refetched rather than exported from `messages`, so the sidebar can export
    * any thread and not only the open one — and so what lands in the file is
    * what is actually stored, not a list that a live stream is still editing.
    */
-  const exportConversation = async (id: number) => {
+  const exportConversation = useStableCallback(async (id: number) => {
     const data = await guard(() => fetchConversation(id));
     if (!data) return;
     const title = data.conversation.title || "Konverzace";
@@ -968,16 +985,18 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
       exportFilename(title),
       conversationToMarkdown(title, data.messages, providerNames)
     );
-  };
+  });
 
-  const signOut = async () => {
+  const openSettings = useStableCallback(() => setSettingsOpen(true));
+
+  const signOut = useStableCallback(async () => {
     discardStream();
     // Unsent text is content, not a preference: ending the session on purpose
     // must not leave half-typed prompts behind on the device.
     clearSettingsWithPrefix(DRAFT_PREFIX);
     await logout();
     onSignedOut();
-  };
+  });
 
   /* ------------------------------------------------------------ keyboard */
 
@@ -1064,7 +1083,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
         onExport={exportConversation}
         configuredCount={keySlots.configured}
         totalKeys={keySlots.total}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={openSettings}
         accountLabel={accountLabel}
         onSignOut={signOut}
         theme={theme}
@@ -1089,7 +1108,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           totalKeys={keySlots.total}
           minSlots={minSlots}
           onToggleSidebar={() => setSidebarOpen((open) => !open)}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={openSettings}
           onOpenPalette={() => setPaletteOpen(true)}
         />
 
@@ -1133,7 +1152,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
                         onRetry={retryable && m.error ? regenerateLast : undefined}
                         onEdit={
                           m.role === "user" && m.id != null && !streaming && currentId !== null
-                            ? (content) => editMessageAt(i, content)
+                            ? editMessageAt
                             : undefined
                         }
                         editNonce={i === lastUserIndex ? editNonce : undefined}

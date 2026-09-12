@@ -1,7 +1,7 @@
 import { Brain, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Message as ChatMessage } from "../lib/types";
-import { Markdown } from "./Markdown";
+import { MarkdownLazy } from "./MarkdownLazy";
 
 interface Props {
   message: ChatMessage;
@@ -89,7 +89,7 @@ export function Reasoning({ message }: Props) {
               syrové hvězdičky vypadají jako chyba. Nadpisy uvnitř bloku jsou
               ale stylem sražené na velikost běžného textu, aby se z poznámek
               nestala druhá, hlasitější odpověď. */}
-          <Markdown content={text} />
+          <MarkdownLazy content={text} />
         </div>
       )}
     </div>

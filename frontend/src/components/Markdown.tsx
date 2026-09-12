@@ -98,15 +98,94 @@ function normalise(content: string): string {
   );
 }
 
+const FENCE = /^\s{0,3}(```|~~~)/;
+const DISPLAY_DELIM = /^\s{0,3}\$\$\s*$/;
+
+/**
+ * Kde se dá odpověď rozříznout, aby se hotová část nemusela parsovat znovu.
+ *
+ * Vrací index znaku za posledním prázdným řádkem, který leží mimo blok kódu i
+ * mimo vysázený vzorec. Řez uvnitř fence by z půlky bloku udělal nedokončený
+ * ```` ``` ```` a zbytek odpovědi by se sesypal — proto se stav obou závorek
+ * počítá při průchodu. Nula znamená „není kde", volající pak sází vše živě.
+ */
+function lastSafeBreak(content: string): number {
+  const lines = content.split("\n");
+  let offset = 0;
+  let cut = 0;
+  let fence: string | null = null;
+  let math = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const opening = FENCE.exec(line);
+    if (fence !== null) {
+      if (opening && opening[1] === fence) fence = null;
+    } else if (opening) {
+      fence = opening[1];
+    } else if (DISPLAY_DELIM.test(line)) {
+      math = !math;
+    } else if (line.trim() === "" && !math) {
+      // Až za odřádkováním: prefix tím zůstane samostatně platný markdown.
+      cut = offset + line.length + 1;
+    }
+    offset += line.length + 1;
+  }
+
+  // Poslední řádek se ještě píše, takže řez těsně před ním nic neušetří.
+  return fence === null && !math ? cut : 0;
+}
+
 interface Props {
   content: string;
   /** How many sources this message has, so `[n]` links only when n exists. */
   sourceCount?: number;
   /** Scopes the `#…-src-n` anchors to one message. */
   anchorPrefix?: string;
+  /**
+   * Odpověď se ještě píše. Zapíná rozdělení na hotový a živý kus — u dopsané
+   * zprávy by bylo jen zbytečným druhým parserem.
+   */
+  streaming?: boolean;
 }
 
 export const Markdown = memo(function Markdown({
+  content,
+  sourceCount = 0,
+  anchorPrefix = "live",
+  streaming = false,
+}: Props) {
+  // Dokud odpověď roste, parsoval se při každém snímku celý dosavadní text —
+  // cena kvadratická v délce, takže dlouhá odpověď ke konci viditelně
+  // zpomalovala. Hotová část se proto uřízne u posledního prázdného řádku a
+  // `memo` níž ji nechá na pokoji; živě se sází jen rozepsaný odstavec.
+  const cut = useMemo(() => (streaming ? lastSafeBreak(content) : 0), [streaming, content]);
+
+  if (cut === 0) {
+    return (
+      <div className="prose">
+        <MarkdownBody content={content} sourceCount={sourceCount} anchorPrefix={anchorPrefix} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="prose">
+      <MarkdownBody
+        content={content.slice(0, cut)}
+        sourceCount={sourceCount}
+        anchorPrefix={anchorPrefix}
+      />
+      <MarkdownBody
+        content={content.slice(cut)}
+        sourceCount={sourceCount}
+        anchorPrefix={anchorPrefix}
+      />
+    </div>
+  );
+});
+
+const MarkdownBody = memo(function MarkdownBody({
   content,
   sourceCount = 0,
   anchorPrefix = "live",
@@ -123,7 +202,7 @@ export const Markdown = memo(function Markdown({
   );
 
   return (
-    <div className="prose">
+    <>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, MATH] as never}
         rehypePlugins={rehypePlugins}
@@ -172,6 +251,6 @@ export const Markdown = memo(function Markdown({
       >
         {source}
       </ReactMarkdown>
-    </div>
+    </>
   );
 });

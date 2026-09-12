@@ -127,8 +127,13 @@ export default defineConfig({
       output: {
         // Markdown + syntax highlighting is the bulk of the bundle and changes
         // far less often than the app itself — keep it in its own chunk.
+        //
+        // KaTeX má vlastní: bez toho se sazeč vzorců (272 kB) počítal do
+        // hlavního balíku a stahoval se, aby se zobrazilo pole na čtyřmístný
+        // kód. Vlastní chunk z něj dělá věc, která přijde až s odpovědí.
         manualChunks: {
           markdown: ["react-markdown", "remark-gfm", "rehype-highlight"],
+          katex: ["rehype-katex", "remark-math", "katex"],
         },
       },
     },

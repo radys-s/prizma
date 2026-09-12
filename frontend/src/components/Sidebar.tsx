@@ -14,7 +14,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { searchMessages } from "../lib/api";
 import { dayBucket, normalize } from "../lib/date";
 import type { Theme } from "../lib/theme";
@@ -152,7 +152,8 @@ interface Props {
   onThemeChange: (theme: Theme) => void;
 }
 
-export function Sidebar({
+/** Panel se mění jenom se seznamem vláken — ne s každým tokenem odpovědi. */
+export const Sidebar = memo(function Sidebar({
   conversations,
   currentId,
   onSelect,
@@ -481,4 +482,4 @@ export function Sidebar({
       </div>
     </aside>
   );
-}
+});
