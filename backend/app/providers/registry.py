@@ -578,8 +578,3 @@ def by_id(provider_id: str) -> ProviderModel | None:
 
 def providers_for_capability(capability: str) -> list[ProviderModel]:
     return [p for p in active() if capability in p.capabilities]
-
-
-def providers_sharing_key(credential_id: str) -> list[ProviderModel]:
-    """Every registry entry unlocked by one credential-store entry."""
-    return [p for p in active() if p.credential_id == credential_id]

@@ -25,7 +25,7 @@ server-side.
 
 import os
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app import crypto
 from app.db import engine
@@ -54,11 +54,6 @@ def env_key(credential_id: str) -> str | None:
 def is_shadowed(credential_id: str) -> bool:
     """True when an env var owns this key and the database cannot win."""
     return env_key(credential_id) is not None
-
-
-def reset_cache() -> None:
-    """For harnesses that swap `SECRET_KEY` or the engine underneath us."""
-    _cache.clear()
 
 
 def set_key(credential_id: str, api_key: str) -> None:
@@ -142,9 +137,3 @@ def endpoint(provider) -> dict:
     if getattr(provider, "api_base", ""):
         return {"api_base": provider.api_base, "api_key": "local"}
     return {"api_key": get_key(provider.credential_id)}
-
-
-def stored_ids() -> list[str]:
-    """Credential ids with a row in the database. Used by the migration script."""
-    with Session(engine) as session:
-        return list(session.exec(select(ProviderKey.credential_id)).all())

@@ -20,6 +20,7 @@ nezdědil a byl by zpátky u prvního odstavce.
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -41,6 +42,30 @@ MAX_LOG_BYTES = 2 * 1024 * 1024
 # kterou už je jasné, že server nenaběhl a okno by ukázalo chybovou stránku.
 OPEN_TIMEOUT = 60.0
 OPEN_POLL = 0.5
+
+# Jak často kontrolovat velikost logu za běhu. Pět minut: dost často na to,
+# aby se log nerozrostl o řád, a dost zřídka, aby to nikdo nepoznal.
+LOG_CHECK_SECONDS = 300
+
+
+def _wait_for_health(port: int) -> bool:
+    """True, jakmile server na tom portu odpovídá; False, když se nedočkal.
+
+    Čeká se na `/api/health`, ne na pevné zpoždění. Než se naimportuje litellm
+    a postaví routovací tabulka, uběhne podle nálady disku několik sekund.
+    """
+    deadline = time.monotonic() + OPEN_TIMEOUT
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/health", timeout=2
+            ) as res:
+                if res.status == 200:
+                    return True
+        except (urllib.error.URLError, OSError):
+            pass
+        time.sleep(OPEN_POLL)
+    return False
 
 
 def _edge() -> str | None:
@@ -69,16 +94,7 @@ def _open_when_ready(port: int) -> None:
     appka, i když jde jen o pár sekund netrpělivosti.
     """
     url = f"http://127.0.0.1:{port}"
-    deadline = time.monotonic() + OPEN_TIMEOUT
-    while time.monotonic() < deadline:
-        try:
-            with urllib.request.urlopen(f"{url}/api/health", timeout=2) as res:
-                if res.status == 200:
-                    break
-        except (urllib.error.URLError, OSError):
-            pass
-        time.sleep(OPEN_POLL)
-    else:
+    if not _wait_for_health(port):
         print(f"okno se neotevřelo: server neodpověděl do {OPEN_TIMEOUT:.0f} s")
         return
 
@@ -102,6 +118,61 @@ def _log_path() -> Path:
     return directory / "server.log"
 
 
+def _instance_port_file() -> Path:
+    base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    directory = base / "Prizma"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory / "instance.port"
+
+
+def _claim_when_ready(port: int, claimed: list[Path]) -> None:
+    """Zapíše `instance.port`, ale až když na portu opravdu odpovídá server.
+
+    `Launcher.cs` bere ten soubor jako jediný důkaz „appka už běží" a bez něj
+    najde port 8000 obsazený a spustí druhý uvicorn na 8001. Dvě instance nad
+    jedním SQLite souborem přitom porušují předpoklad, na kterém stojí cache
+    v `settings_store.py`: vypnutý přístup k souborům v jednom okně zůstane
+    v druhém zapnutý.
+
+    Zapsat ho hned při startu by ale problém jen otočil. Proces spuštěný na
+    obsazený port by značku běžící instance přepsal a při svém pádu smazal —
+    a launcher by pak zakládal třetí. Proto až po `/api/health` a proto se
+    maže jen to, co si tenhle proces opravdu zabral.
+    """
+    if not _wait_for_health(port):
+        return
+    path = _instance_port_file()
+    try:
+        path.write_text(str(port), encoding="utf-8")
+    except OSError as exc:
+        print(f"instance.port se nezapsal: {exc}")
+        return
+    claimed.append(path)
+
+
+def _trim_log_forever(stream, path: Path) -> None:
+    """Hlídá velikost logu i za běhu, ne jen při startu.
+
+    Rotace při startu stačila, dokud se appka spouštěla po přihlášení a končila
+    s ním. Úloha ale nemá časový limit, takže jeden proces může běžet týdny —
+    a `server.log` mezitím roste bez jediné kontroly.
+
+    Rotuje se kopií a zkrácením na místě, ne přejmenováním: soubor je zrovna
+    otevřený jako `sys.stdout` a přejmenovat otevřený soubor Windows nedovolí.
+    """
+    while True:
+        time.sleep(LOG_CHECK_SECONDS)
+        try:
+            if path.stat().st_size <= MAX_LOG_BYTES:
+                continue
+            shutil.copyfile(path, path.with_suffix(".log.old"))
+            stream.truncate(0)
+            print(f"=== log zkrácen {datetime.now():%Y-%m-%d %H:%M:%S} ===")
+        except OSError:
+            # Log není důvod shodit server. Příště.
+            continue
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prizma jako služba na pozadí")
     parser.add_argument("--port", type=int, default=8000)
@@ -120,6 +191,8 @@ def main() -> int:
     sys.stderr = stream
     print(f"\n=== {datetime.now():%Y-%m-%d %H:%M:%S} — start na {args.host}:{args.port} ===")
 
+    threading.Thread(target=_trim_log_forever, args=(stream, log), daemon=True).start()
+
     # Až teď, s přesměrovaným stdio: uvicorn si logging staví při importu
     # a konfiguruje ho podle toho, co v `sys.stderr` najde.
     os.chdir(BACKEND)
@@ -131,14 +204,28 @@ def main() -> int:
     if args.open:
         threading.Thread(target=_open_when_ready, args=(args.port,), daemon=True).start()
 
+    claimed: list[Path] = []
+    threading.Thread(
+        target=_claim_when_ready, args=(args.port, claimed), daemon=True
+    ).start()
+
+    code = 0
     try:
         uvicorn.run("app.main:app", host=args.host, port=args.port, log_level="info")
-    except OSError as exc:
-        # Nejčastěji „port je obsazený" — appka už běží, což není chyba,
-        # jen důvod tenhle proces ukončit.
-        print(f"server nenaběhl: {exc}")
-        return 1
-    return 0
+    except SystemExit as exc:
+        # uvicorn nekončí přes `OSError`, ale přes `SystemExit` — původní
+        # `except OSError` se proto nikdy neprovedl a obsazený port vypadal
+        # jako čistý konec. Nejčastější důvod je „appka už běží", což není
+        # chyba, jen důvod tenhle proces ukončit.
+        code = int(exc.code or 0)
+        print(f"server skončil s kódem {code}")
+    finally:
+        for path in claimed:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return code
 
 
 if __name__ == "__main__":
