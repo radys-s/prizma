@@ -142,7 +142,9 @@ export const Markdown = memo(function Markdown({
           },
           table({ children }) {
             return (
-              <div className="table-wrap">
+              // Stejný důvod jako u `<pre>`: široká tabulka se posouvá a bez
+              // zaostřitelného obalu se z klávesnice neposune vůbec.
+              <div className="table-wrap" tabIndex={0} role="region" aria-label="Tabulka">
                 <table>{children}</table>
               </div>
             );

@@ -347,6 +347,7 @@ export function Message({
       ref={rootRef}
       onClick={onCitationClick}
       data-streaming={message.streaming ? "true" : undefined}
+      aria-busy={message.streaming ? true : undefined}
     >
       {/* Věta, ne řada šedých chipů. „Gemini Flash · vybráno na kód“ přečte
           kdokoli; „kód · složité“ pochopí jenom ten, kdo ví, že za tím stojí

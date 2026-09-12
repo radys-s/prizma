@@ -41,6 +41,7 @@ import {
 } from "./lib/storage";
 import { applyTheme, loadTheme, saveTheme, watchSystem, type Theme } from "./lib/theme";
 import { useAutoScroll } from "./lib/useAutoScroll";
+import { anyOverlayOpen } from "./lib/useFocusTrap";
 import { useHotkeys } from "./lib/useHotkeys";
 import type {
   AuthState,
@@ -217,6 +218,8 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   const [currentId, setCurrentId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
+  /** Poslední dokončená věta odpovědi, pro odečítač obrazovky. */
+  const [announcement, setAnnouncement] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [routing, setRouting] = useState<RoutingOptions | null>(null);
@@ -359,6 +362,17 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     reloadRouting();
   }, [reloadProviders, reloadConversations, reloadRouting]);
 
+  // Šířka okna se rozhodovala jednou při připojení. Otočení tabletu nebo
+  // zúžení okna na desktopu tím pádem nechalo panel v podobě, která tam
+  // nepatří: na mobilu otevřená zásuvka přes celý obsah, po roztažení zpátky
+  // schovaný panel, ke kterému vede jenom hamburger.
+  useEffect(() => {
+    const query = window.matchMedia(MOBILE_QUERY);
+    const sync = (e: MediaQueryListEvent) => setSidebarOpen(!e.matches);
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
   // The inline script in index.html already stamped a forced theme before the
   // first paint, so this is a no-op on load and only does work when the user
   // actually flips the control.
@@ -466,6 +480,32 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     const chunk = reasonPendingRef.current;
     reasonPendingRef.current = "";
     return chunk;
+  };
+
+  /**
+   * Předčítání odpovědi, která se teprve píše.
+   *
+   * Jediné `aria-live` na cestě k odpovědi měly kroky hledání, a ty mizí ve
+   * chvíli, kdy dorazí první token — od té chvíle se pro odečítač obrazovky
+   * nedělo nic. Živá oblast překreslovaná šedesátkrát za sekundu by ale byla
+   * horší než ticho: čtečka začne větu znovu při každé změně. Ven proto jdou
+   * jen dokončené věty, a to, co zbylo, až na konci.
+   */
+  const liveBufRef = useRef("");
+
+  const announceSentences = (chunk: string) => {
+    liveBufRef.current += chunk;
+    const cut = liveBufRef.current.search(/[.!?…:\n][^.!?…:\n]*$/);
+    if (cut < 0) return;
+    const said = liveBufRef.current.slice(0, cut + 1).trim();
+    liveBufRef.current = liveBufRef.current.slice(cut + 1);
+    if (said) setAnnouncement(said);
+  };
+
+  const announceRest = () => {
+    const rest = liveBufRef.current.trim();
+    liveBufRef.current = "";
+    if (rest) setAnnouncement(rest);
   };
 
   const dismissLimit = useCallback((id: string) => {
@@ -659,6 +699,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
         pendingRef.current = "";
         if (chunk && !stale()) {
           setMessages((prev) => patchLast(prev, (m) => ({ ...m, content: m.content + chunk })));
+          announceSentences(chunk);
         }
       });
     },
@@ -692,6 +733,8 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
       if (stale()) return;
       const tail = drainBuffer();
       const reasonTail = drainReasoning();
+      if (tail) announceSentences(tail);
+      announceRest();
       setMessages((prev) =>
         patchLast(prev, (m) => ({
           ...m,
@@ -778,6 +821,8 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     // edit can have invalidated the summary since the last one.
     setCompact(null);
     providerRef.current = null;
+    liveBufRef.current = "";
+    setAnnouncement("");
     setMessages((prev) => [...prev, { role: "assistant", content: "", streaming: true }]);
     await start(makeHandlers(runId), controller.signal);
   };
@@ -966,6 +1011,17 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
       key: "Escape",
       inFields: true,
       handler: () => {
+        // Escape má v appce dvě práce a překryvné okno má přednost: zavřít
+        // nápovědu ke zkratkám uprostřed odpovědi tu odpověď zastavovalo.
+        // Dialog se to snažil řešit přes `stopPropagation()` z posluchače na
+        // `window`, což proti posluchači na stejném uzlu nedělá nic.
+        if (anyOverlayOpen()) return false;
+        // Na mobilu překrývá zásuvka celou konverzaci — dokud je otevřená, je
+        // Escape hlavně „zavři ji“. Stopku zdědí až další stisk.
+        if (sidebarOpen && isMobile()) {
+          setSidebarOpen(false);
+          return;
+        }
         if (!streaming) return false;
         stopStreaming();
       },
@@ -1015,7 +1071,16 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
         onThemeChange={setTheme}
       />
 
-      <div className="scrim" onClick={() => setSidebarOpen(false)} />
+      {/* Tlačítko, ne `div` s `onClick`: na mobilu je to jediná cesta ven
+          ze zásuvky a z klávesnice se na `div` nedalo dosáhnout. Na desktopu
+          a při zavřené zásuvce ho CSS schovává `display: none`, takže se do
+          pořadí Tabů neplete. */}
+      <button
+        type="button"
+        className="scrim"
+        aria-label="Zavřít panel konverzací"
+        onClick={() => setSidebarOpen(false)}
+      />
 
       <main className="chat-area">
         <TopBar
@@ -1028,45 +1093,57 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           onOpenPalette={() => setPaletteOpen(true)}
         />
 
-        <div className="messages" ref={scrollRef}>
-          {messages.length === 0 ? (
-            <EmptyState
-              onPick={(text, mode) => {
-                // The chip promises a mode, so it has to actually set one —
-                // otherwise "deep research" is just a label on a plain send.
-                setSearch(mode);
-                composerRef.current?.prefill(text);
-              }}
-            />
-          ) : (
-            <div className="messages-inner">
-              {messages.map((m, i) => {
-                const retryable =
-                  i === lastIndex && m.role === "assistant" && !m.streaming && currentId !== null;
-                return (
-                  <div key={m.id ?? `local-${i}`} className="message-slot">
-                    {/* `folded` counts from the start of the thread, so it is
-                        also the index of the first turn still sent whole. */}
-                    {compact && compact.folded === i && i > 0 && (
-                      <CompactDivider info={compact} />
-                    )}
-                    <Message
-                      message={m}
-                      providerNames={providerNames}
-                      onRegenerate={retryable && !m.error ? regenerateLast : undefined}
-                      onRetry={retryable && m.error ? regenerateLast : undefined}
-                      onEdit={
-                        m.role === "user" && m.id != null && !streaming && currentId !== null
-                          ? (content) => editMessageAt(i, content)
-                          : undefined
-                      }
-                      editNonce={i === lastUserIndex ? editNonce : undefined}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
+        {/* Jediné místo, kde se odpověď dostane k odečítači obrazovky.
+            Mimo obrazovku, ne `display: none` — skryté prvky čtečky ignorují,
+            takže by to bylo `aria-live` bez posluchače. */}
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {announcement}
+        </p>
+
+        {/* Tlačítko „Nejnovější“ je schválně sourozenec posouvané oblasti, ne
+            její dítě: ukotvené uvnitř ní sedělo na konci obsahu, takže se
+            ukazovalo mimo obrazovku právě tehdy, když bylo potřeba. */}
+        <div className="messages-wrap">
+          <div className="messages" ref={scrollRef}>
+            {messages.length === 0 ? (
+              <EmptyState
+                onPick={(text, mode) => {
+                  // The chip promises a mode, so it has to actually set one —
+                  // otherwise "deep research" is just a label on a plain send.
+                  setSearch(mode);
+                  composerRef.current?.prefill(text);
+                }}
+              />
+            ) : (
+              <div className="messages-inner">
+                {messages.map((m, i) => {
+                  const retryable =
+                    i === lastIndex && m.role === "assistant" && !m.streaming && currentId !== null;
+                  return (
+                    <div key={m.id ?? `local-${i}`} className="message-slot">
+                      {/* `folded` counts from the start of the thread, so it is
+                          also the index of the first turn still sent whole. */}
+                      {compact && compact.folded === i && i > 0 && (
+                        <CompactDivider info={compact} />
+                      )}
+                      <Message
+                        message={m}
+                        providerNames={providerNames}
+                        onRegenerate={retryable && !m.error ? regenerateLast : undefined}
+                        onRetry={retryable && m.error ? regenerateLast : undefined}
+                        onEdit={
+                          m.role === "user" && m.id != null && !streaming && currentId !== null
+                            ? (content) => editMessageAt(i, content)
+                            : undefined
+                        }
+                        editNonce={i === lastUserIndex ? editNonce : undefined}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           {!pinned && messages.length > 0 && (
             <button type="button" className="scroll-bottom-btn" onClick={scrollToBottom}>

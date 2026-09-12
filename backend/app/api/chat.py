@@ -10,7 +10,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.auth import ratelimit
 from app.db import engine, get_session
-from app.models.conversation import Conversation, Message
+from app.models.conversation import Conversation, Message, utcnow
 from app.providers.client import stream_chat
 from app.routing import compact as compacting
 from app.routing import decompose as decomposing
@@ -450,7 +450,8 @@ def _stream_response(
             # zase spolkl `GeneratorExit`, kterým se generátor ukončuje.
             if assistant_text:
                 with Session(engine) as save_session:
-                    if save_session.get(Conversation, conversation_id) is None:
+                    thread = save_session.get(Conversation, conversation_id)
+                    if thread is None:
                         log.info(
                             "odpověď zahozena — konverzace %s mezitím smazána",
                             conversation_id,
@@ -494,6 +495,10 @@ def _stream_response(
                             tokens=tokens or None,
                         )
                         save_session.add(saved)
+                        # Vlákno je tím pádem čerstvé — panel ho řadí podle
+                        # téhle značky, ne podle data založení.
+                        thread.updated_at = saved.created_at
+                        save_session.add(thread)
                         save_session.commit()
                         save_session.refresh(saved)
                         saved_id = saved.id
@@ -554,6 +559,11 @@ async def chat_stream(
         conversation_id=conversation_id, role="user", content=req.message
     )
     session.add(question)
+    # Vlákno ožívá už otázkou, ne až odpovědí: kdyby se stamp psal jenom při
+    # uložení odpovědi, konverzace, kde všichni provideři selhali, by v panelu
+    # zůstala tam, kde byla.
+    conversation.updated_at = question.created_at
+    session.add(conversation)
     session.commit()
     session.refresh(question)
 
@@ -684,6 +694,8 @@ async def chat_edit(
     doomed = tuple(m.id for m in rows[index + 1 :] if m.id is not None)
     rows[index].content = content
     session.add(rows[index])
+    conversation.updated_at = utcnow()
+    session.add(conversation)
     session.commit()
 
     # The edited turn may already have been folded into the compaction summary,

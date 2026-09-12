@@ -76,6 +76,22 @@ textarea {
   background: transparent;
 }
 
+/* Text jen pro odečítač obrazovky. `display: none` ani `visibility: hidden`
+   to nejsou: obojí prvek z přístupnostního stromu vyřadí, takže by v něm
+   nebylo co předčítat. Jeden pixel s ořezem je jediná varianta, kterou
+   čtečky přečtou a oko nevidí. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ------------------------------------------------------------- shell ----- */
 
 .app {
@@ -90,8 +106,28 @@ textarea {
   grid-template-columns: 0 minmax(0, 1fr);
 }
 
+/* Nulová šířka sloupec **ořízne**, ale neschová: na desktopu zůstávalo v
+   zavřeném panelu asi patnáct ovládacích prvků v pořadí tabulátoru, takže
+   Tab z hlavičky odešel na patnáct zastávek, které nejsou vidět. Přepnutí
+   viditelnosti se nechá dojet posun, aby zavírání nepohaslo skokem. */
+.app[data-sidebar="closed"] .sidebar {
+  visibility: hidden;
+  transition: visibility 0s linear var(--dur);
+}
+
+.app[data-sidebar="open"] .sidebar {
+  visibility: visible;
+  transition: visibility 0s;
+}
+
 .scrim {
   display: none;
+  /* Je to `<button>`, aby se zásuvka dala zavřít i z klávesnice — proto reset
+     rámečku a odsazení, které prohlížeč tlačítkům dává sám. */
+  appearance: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
   position: fixed;
   inset: 0;
   z-index: 30;
@@ -253,6 +289,40 @@ textarea {
   color: var(--text);
 }
 
+/* Otevření konverzace je skutečné tlačítko uvnitř řádku — obal drží pozadí,
+   tlačítko klik i klávesnici. Reset je proto úplný: bez `font: inherit` by
+   se název vykreslil systémovým fontem tlačítek. */
+.conversation-open,
+button.conversation-item {
+  appearance: none;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversation-open {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border-radius: 6px;
+}
+
+button.conversation-item {
+  width: 100%;
+}
+
+.conversation-open:focus-visible,
+button.conversation-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Aktivní konverzace se pozná ze dvou metrů: nálev v akcentu a proužek na
    hraně. Samotná světlejší plocha se v tmavém režimu ztrácí proti hoveru. */
 .conversation-item.active {
@@ -400,8 +470,12 @@ textarea {
   font-size: 13.5px;
 }
 
+/* `outline: none` bez náhrady je jediné místo v souboru, kde se fokus jen
+   zrušil. Pole se otevírá kliknutím i klávesnicí (F2 na řádku) a bez prstenu
+   nebylo poznat, že se píše do přejmenování, a ne do konverzace. */
 .rename-input:focus {
   outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .confirm-row {
@@ -810,12 +884,25 @@ textarea {
 
 /* ---------------------------------------------------------- messages ----- */
 
+/* Obal, který se neposouvá. Tlačítko „Nejnovější“ bylo dřív uvnitř
+   `.messages`, tedy uvnitř posouvané oblasti, a `position: absolute` ho tam
+   ukotvilo ke konci **obsahu**, ne k dolnímu okraji okna. Vykreslovalo se
+   tedy přesně ve chvíli, kdy bylo mimo obrazovku — když uživatel odroloval
+   nahoru. Tenhle obal má stejné rozměry jako posouvaná oblast, ale sám se
+   neposouvá, takže ukotvení konečně sedí. */
+.messages-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .messages {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  position: relative;
 }
 
 .messages-inner {
@@ -1907,6 +1994,14 @@ textarea {
   margin: 0 0 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+}
+
+/* Oba posuvníky jsou nově zaostřitelné, aby se daly posunout z klávesnice.
+   Prsten je tím pádem povinný — jinak Tab zastaví na něčem, co nikde nevidět. */
+.table-wrap:focus-visible,
+.code-block pre:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* --------------------------------------------------------- matematika ----- */
@@ -4414,6 +4509,15 @@ kbd.mono {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* Výjimka: spinner. Plošné pravidlo ho zastaví na prvním snímku, takže z
+     „pracuji“ zbyde statická ikona, která vypadá jako zaseknutá appka.
+     Reduced motion znamená míň pohybu, ne žádnou zpětnou vazbu — točí se
+     dál, jen pomaleji a bez trhnutí. */
+  .spin {
+    animation-duration: 1.8s !important;
+    animation-iteration-count: infinite !important;
   }
 }
 

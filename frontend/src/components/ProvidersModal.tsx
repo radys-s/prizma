@@ -14,7 +14,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   deleteProviderKey,
   openSignupPage,
@@ -23,6 +23,7 @@ import {
   testProviderKey,
 } from "../lib/api";
 import type { AuthState, Provider, ToolsSettings } from "../lib/types";
+import { useFocusTrap } from "../lib/useFocusTrap";
 import { AccountSection } from "./AccountSection";
 import { LocalModelSection } from "./LocalModelSection";
 import { ProviderMark } from "./ProviderMark";
@@ -130,7 +131,9 @@ export function ProvidersModal({
   const [results, setResults] = useState<Record<string, Result>>({});
   // Only set while re-entering a key for an already-configured provider.
   const [editing, setEditing] = useState<Record<string, boolean>>({});
-  const dialogRef = useRef<HTMLDivElement>(null);
+  // Drží fokus uvnitř a po zavření ho vrátí na tlačítko, kterým se
+  // nastavení otevřelo.
+  const dialogRef = useFocusTrap<HTMLDivElement>();
   const [readError, setReadError] = useState<string | null>(null);
   // Typed locally and pushed on blur. Saving per keystroke would mean a write
   // to the settings table for every character of a 2 000-character prompt.
@@ -145,7 +148,6 @@ export function ProvidersModal({
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    dialogRef.current?.focus();
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 

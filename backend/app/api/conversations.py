@@ -59,6 +59,9 @@ def _conversation(conversation: Conversation) -> dict:
         "id": conversation.id,
         "title": conversation.title,
         "created_at": conversation.created_at,
+        # Fallback na `created_at` kvůli řádkům, které migrace teprve doplní —
+        # panel podle toho řadí a nesmí mu přijít `null`.
+        "updated_at": conversation.updated_at or conversation.created_at,
         "pinned": bool(conversation.pinned),
     }
 
@@ -81,8 +84,12 @@ def _conversation_or_404(session: Session, conversation_id: int) -> Conversation
 @router.get("")
 def list_conversations(session: Session = Depends(get_session)):
     conversations = session.exec(
+        # Podle poslední aktivity, ne podle založení: vlákno, ve kterém se
+        # právě píše, patří nahoru, i kdyby vzniklo před měsícem.
         select(Conversation).order_by(
-            col(Conversation.pinned).desc(), col(Conversation.created_at).desc()
+            col(Conversation.pinned).desc(),
+            col(Conversation.updated_at).desc(),
+            col(Conversation.created_at).desc(),
         )
     ).all()
     return [_conversation(c) for c in conversations]

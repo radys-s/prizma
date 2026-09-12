@@ -223,7 +223,7 @@ export function Sidebar({
 
     const byBucket = new Map<string, Conversation[]>();
     for (const c of rest) {
-      const bucket = dayBucket(c.created_at);
+      const bucket = dayBucket(c.updated_at ?? c.created_at);
       const list = byBucket.get(bucket);
       if (list) list.push(c);
       else byBucket.set(bucket, [c]);
@@ -341,15 +341,14 @@ export function Sidebar({
                     </button>
                   </div>
                 ) : (
+                  /* Řádek byl `div role="button"` s vnořeným opravdovým
+                     tlačítkem — což je neplatné HTML a mezerník řádek
+                     neaktivoval. Teď je otevření konverzace skutečné
+                     `<button>` a nabídka „⋯“ jeho sourozenec; obal drží jen
+                     pozadí a hover. */
                   <div
                     key={c.id}
                     className={`conversation-item${c.id === currentId ? " active" : ""}`}
-                    onClick={() => renamingId !== c.id && onSelect(c.id)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && renamingId !== c.id) onSelect(c.id);
-                    }}
                   >
                     {renamingId === c.id ? (
                       <input
@@ -359,15 +358,21 @@ export function Sidebar({
                         onChange={(e) => setDraft(e.target.value)}
                         onKeyDown={onRenameKey}
                         onBlur={commitRename}
-                        onClick={(e) => e.stopPropagation()}
                         aria-label="Nový název konverzace"
                       />
                     ) : (
                       <>
-                        {c.pinned && (
-                          <Pin size={12} className="pin-indicator" aria-hidden />
-                        )}
-                        <span className="conversation-title">{c.title}</span>
+                        <button
+                          type="button"
+                          className="conversation-open"
+                          onClick={() => onSelect(c.id)}
+                          aria-current={c.id === currentId ? "true" : undefined}
+                        >
+                          {c.pinned && (
+                            <Pin size={12} className="pin-indicator" aria-hidden />
+                          )}
+                          <span className="conversation-title">{c.title}</span>
+                        </button>
                         <RowMenu
                           conversation={c}
                           open={menuId === c.id}
@@ -390,21 +395,17 @@ export function Sidebar({
             <div>
               <p className="list-group-label">Ve zprávách</p>
               {bodyHits.map((hit) => (
-                <div
+                <button
+                  type="button"
                   key={`hit-${hit.conversation_id}`}
                   className={`conversation-item search-hit${
                     hit.conversation_id === currentId ? " active" : ""
                   }`}
                   onClick={() => onSelect(hit.conversation_id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") onSelect(hit.conversation_id);
-                  }}
                 >
                   <span className="conversation-title">{hit.title}</span>
                   <span className="search-snippet">{hit.snippet}</span>
-                </div>
+                </button>
               ))}
             </div>
           )}
