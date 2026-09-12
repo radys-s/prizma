@@ -43,15 +43,7 @@ export function saveTheme(theme: Theme): void {
   }
 }
 
-/** True when the OS is currently asking for dark. */
-export function systemPrefersDark(): boolean {
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
-}
 
-export function resolve(theme: Theme): Resolved {
-  if (theme !== "system") return theme;
-  return systemPrefersDark() ? "dark" : "light";
-}
 
 /**
  * Puts the choice on the document.

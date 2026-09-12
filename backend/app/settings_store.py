@@ -98,8 +98,3 @@ def set_text(key: str, value: str, limit: int | None = None) -> None:
         session.add(row)
         session.commit()
     _cache.pop(key, None)
-
-
-def all_bools() -> dict[str, bool]:
-    """Every known toggle, defaults included — what the settings dialog reads."""
-    return {key: get_bool(key) for key in DEFAULTS}

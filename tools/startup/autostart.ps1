@@ -122,12 +122,12 @@ if (Test-Path $edge) {
   $shell = New-Object -ComObject WScript.Shell
   $lnk = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'Prizma.lnk'))
   $lnk.TargetPath = $edge
-  $lnk.Arguments  = "--app=http://localhost:$Port"
+  $lnk.Arguments  = "--app=http://127.0.0.1:$Port"
   $icon = Join-Path $PSScriptRoot 'prizma.ico'
   if (Test-Path $icon) { $lnk.IconLocation = $icon }
   $lnk.Description = 'Prizma'
   $lnk.Save()
   Write-Output "založeno: zástupce Prizma.lnk na ploše"
 } else {
-  Write-Warning "Edge nenalezen - zástupce se nezaložil. Appka je na http://localhost:$Port"
+  Write-Warning "Edge nenalezen - zástupce se nezaložil. Appka je na http://127.0.0.1:$Port"
 }

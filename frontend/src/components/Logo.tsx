@@ -112,12 +112,3 @@ export function PrizmaTile({ size = 40, className }: { size?: number; className?
   );
 }
 
-/** Dlaždice + název, pro přihlašovací obrazovku a hlavičku sidebaru. */
-export function PrizmaWordmark({ size = 28 }: { size?: number }) {
-  return (
-    <span className="wordmark">
-      <PrizmaTile size={size} />
-      <span className="wordmark-text">Prizma</span>
-    </span>
-  );
-}

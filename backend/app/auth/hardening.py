@@ -40,9 +40,6 @@ def allowed_hostnames() -> set[str]:
     return LOOPBACK_HOSTNAMES | {h.lower() for h in settings.effective_allowed_hosts()}
 
 
-# Kept for anything that imported the old constant. Prefer `allowed_hostnames()`.
-ALLOWED_HOSTNAMES = LOOPBACK_HOSTNAMES
-
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",

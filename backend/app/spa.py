@@ -29,7 +29,6 @@ DIST_DIR = BACKEND_DIR.parent / "frontend" / "dist"
 ROOT_FILES = (
     "manifest.webmanifest",
     "sw.js",
-    "favicon.svg",
     "icon-192.png",
     "icon-512.png",
     "icon-maskable-512.png",
@@ -112,7 +111,3 @@ def mount(app: FastAPI) -> bool:
         return _index()
 
     return True
-
-
-def dist_path() -> Path:
-    return DIST_DIR
