@@ -3,7 +3,7 @@
 Lokální single-user chat appka (rozhraní jako Claude/ChatGPT), která rozloží
 každý dotaz podle typu a pošle ho na nejlepší dostupný **free** model podle
 toho, jaké API klíče máš nastavené. Žádný proxy účet, žádné sdílení klíčů —
-každý klíč je tvůj vlastní, uložený jen u tebe v OS credential store.
+každý klíč je tvůj vlastní, uložený zašifrovaně jen u tebe v databázi.
 
 Jméno je popis chování: hranol vezme jeden paprsek a rozloží ho na spektrum.
 Appka vezme jeden prompt a rozloží ho mezi modely. Značka to říká doslova —
@@ -127,7 +127,7 @@ python -m venv .venv
 **Frontend** (v druhém terminálu):
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -438,9 +438,19 @@ sítě.
 ## Bezpečnost
 
 API klíč se ukládá **zašifrovaný AES-256-GCM** do databáze. Šifruje se
-`SECRET_KEY`, který žije jen v prostředí serveru — v DB není, v souboru není, a
-API klíč nikdy nevrací zpátky: `GET /api/providers` posílá pouze
-`configured: true/false`.
+`SECRET_KEY`, a API klíč se nikdy nevrací zpátky: `GET /api/providers` posílá
+pouze `configured: true/false`.
+
+Kde hlavní klíč leží, závisí na tom, kde appka běží:
+
+- **Na serveru** (`PUBLIC_MODE=1`) musí `SECRET_KEY` přijít z prostředí. Bez něj
+  se appka odmítne nastartovat a `app/crypto.py` navíc odmítne sáhnout po
+  souboru — výpis databáze se tak ke klíči nedostane.
+- **Lokálně** se při prvním použití vygeneruje do `backend/data/master.key`
+  (gitignorovaný adresář, hned vedle databáze). Je to vědomý ústupek pohodlí:
+  na jednom notebooku, kde byla alternativou OS credential store na tomtéž
+  stroji, je to rovnocenná výměna za instalaci bez jediného kroku navíc. Kdo ji
+  dělat nechce, nastaví `SECRET_KEY` i lokálně — soubor se pak nezaloží.
 
 > Do verze 3 byl klíč jen ve Windows Credential Manageru. Tohle je **vědomé
 > uvolnění toho pravidla**, ne opomenutí: `keyring` nemá v Linuxovém kontejneru
@@ -461,7 +471,7 @@ Obrana je vrstvená; každá vrstva chytá něco, co ta předchozí neumí:
 | vrstva | co blokuje |
 |---|---|
 | peer musí být `127.0.0.1` / `::1` — **jen když `PUBLIC_MODE=0`** | přístup z jiného stroje v síti |
-| hlavička `Origin`, když je přítomná, musí být v `settings.cors_origins` | cizí web, který by ti na localhost poslal request z prohlížeče |
+| hlavička `Origin`, když je přítomná, musí projít `allowed_origins()` nebo `_is_own_origin()` | cizí web, který by ti na localhost poslal request z prohlížeče |
 | **session cookie** (`ma_session`, HttpOnly, SameSite=Lax) | jiný lokální proces bez `Origin` hlavičky — tohle byla reálná díra: `PUT /key` bez session vracelo 200, teď vrací 401 |
 | **double-submit CSRF token** (`ma_csrf` cookie + `x-csrf-token` hlavička) | zápis vyvolaný cizí stránkou, která na cookie dosáhne, ale na její obsah ne |
 | **allowlist hostnames** (`Host` musí být loopback, jinak 421) | DNS rebinding — útočník nasměruje svou doménu na 127.0.0.1, aby prohlížeč považoval request za same-origin |
@@ -837,6 +847,22 @@ bez adresního řádku. V prohlížeči na telefonu: *Přidat na plochu*.
 
 Offline se načte shell z cache a appka řekne, že je offline; odpovídat bez
 připojení neumí a nepředstírá to.
+
+### Vyzkoušet to na telefonu, než je deploy
+
+`mobile/lan-preview.ps1` pustí backend tak, aby na něj dosáhla i další zařízení
+na stejné Wi-Fi, a vypíše adresu, kterou stačí opsat do telefonu. Zapíná to
+`LAN_PREVIEW=1` (viz `backend/.env.example`) — jediná věc v celé appce, která
+povolí požadavek odjinud než z tohohle počítače, a i pak jen z privátních
+rozsahů. Přístupový kód a jeho zámek platí pořád, se `PUBLIC_MODE` se to
+odmítne potkat a skript běží v popředí, takže se to vypne Ctrl+C. Když se
+telefon nepřipojí, chybí pravidlo ve firewallu — `-OpenFirewall` v admin
+PowerShellu ho přidá a `-CloseFirewall` po testu zase uklidí.
+
+Přes LAN se appka **otevře, ale nenainstaluje**: service worker i „Přidat na
+plochu" chce prohlížeč jen v secure contextu a `http://192.168.…` jím není.
+Na to je potřeba deploy. Podrobnosti i tabulka, co přesně je pro mobil hotové,
+jsou v [`mobile/README.md`](mobile/README.md).
 
 ## Co chybí (vědomě, mimo MVP scope)
 
