@@ -32,7 +32,13 @@ import {
 } from "./lib/api";
 import { conversationToMarkdown, downloadMarkdown, exportFilename } from "./lib/export";
 import { useServiceWorker } from "./lib/pwa";
-import { clearSettingsWithPrefix, loadSetting, saveSetting } from "./lib/storage";
+import {
+  DRAFT_PREFIX,
+  clearSettingsWithPrefix,
+  draftKeyFor,
+  loadSetting,
+  saveSetting,
+} from "./lib/storage";
 import { applyTheme, loadTheme, saveTheme, watchSystem, type Theme } from "./lib/theme";
 import { useAutoScroll } from "./lib/useAutoScroll";
 import { useHotkeys } from "./lib/useHotkeys";
@@ -70,11 +76,6 @@ const TOOLS_UNKNOWN: ToolsSettings = {
   tools_supported: false,
 };
 
-/** One unsent-draft slot per conversation; "new" until the thread has an id. */
-const DRAFT_PREFIX = "prizma.draft.";
-const draftKeyFor = (conversationId: number | null) =>
-  `${DRAFT_PREFIX}${conversationId ?? "new"}`;
-
 function patchLast(
   list: ChatMessage[],
   patch: (m: ChatMessage) => ChatMessage
@@ -83,6 +84,26 @@ function patchLast(
   const next = [...list];
   next[next.length - 1] = patch(next[next.length - 1]);
   return next;
+}
+
+/**
+ * Stejné jako `patchLast`, ale pro poslední otázku — ta už není na konci pole.
+ *
+ * Ve chvíli, kdy dorazí `start`, stojí za ní prázdná bublina odpovědi. Otázka
+ * přitom potřebuje své `id` právě teď: bez něj se nevykreslí tužka na úpravu
+ * a „↑“ nemá co najít, takže obojí fungovalo až po znovuotevření vlákna.
+ */
+function patchLastUser(
+  list: ChatMessage[],
+  patch: (m: ChatMessage) => ChatMessage
+): ChatMessage[] {
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (list[i].role !== "user") continue;
+    const next = [...list];
+    next[i] = patch(next[i]);
+    return next;
+  }
+  return list;
 }
 
 /**
@@ -249,6 +270,16 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
    * number moves on.
    */
   const runIdRef = useRef(0);
+  /**
+   * Which load owns the message list (C3).
+   *
+   * `fetchConversation` je jediné druhé místo, které přepisuje `messages`, a
+   * na rozdíl od streamu žádnou kontrolu nemělo. Kliknout na A a hned na B
+   * stačilo: pomalejší odpověď A dorazila později a přepsala B, takže appka
+   * měla `currentId === B` a na obrazovce vlákno A — a úprava zprávy pak
+   * posílala id z A proti konverzaci B, na což backend odpovídá 404.
+   */
+  const loadIdRef = useRef(0);
   const composerRef = useRef<ComposerHandle>(null);
   const { ref: scrollRef, pinned, scrollToBottom } = useAutoScroll(messages);
 
@@ -266,6 +297,12 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   // The pre-review answer. Held outside state because the review pass has to be
   // able to put it back after the bubble was already cleared.
   const draftRef = useRef("");
+
+  // Kdo právě odpovídá. Ve zprávě to je taky, ale odtud se to dá přečíst bez
+  // vstupu do aktualizační funkce `setMessages` — a jen tady je to spolehlivé,
+  // protože změna providera musí vyprázdnit buffer uvažování, což je vedlejší
+  // efekt a ten do aktualizační funkce nepatří.
+  const providerRef = useRef<string | null>(null);
 
   /**
    * A session can expire while the tab sits open. Rather than sprinkling
@@ -371,7 +408,17 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     if (computer !== "commands") saveSetting(COMPUTER_KEY, computer);
   }, [computer]);
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  // Odhlášení uprostřed odpovědi odpojí `Chat`, ale naplánovaný snímek si to
+  // nevšimne: callback se spustí a sáhne na `setMessages` odmontované
+  // komponenty. Zrušit stačí, buffery odcházejí s ní.
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      if (rafRef.current !== undefined) cancelAnimationFrame(rafRef.current);
+      if (reasonRafRef.current !== undefined) cancelAnimationFrame(reasonRafRef.current);
+    },
+    []
+  );
 
   const keySlots = useMemo(() => {
     const total = new Set(providers.map((p) => p.key_id));
@@ -440,9 +487,15 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   const makeHandlers = (runId: number): StreamHandlers => {
   const stale = () => runIdRef.current !== runId;
   return {
-    onStart: (conversationId) => {
+    onStart: (conversationId, _capability, userMessageId) => {
       if (stale()) return;
       setCurrentId((prev) => prev ?? conversationId);
+      if (userMessageId === undefined) return;
+      setMessages((prev) =>
+        patchLastUser(prev, (m) =>
+          m.id === undefined ? { ...m, id: userMessageId, conversation_id: conversationId } : m
+        )
+      );
     },
     onCompact: (info) => {
       if (stale()) return;
@@ -560,21 +613,25 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     },
     onMeta: (providerId, modelName, note) => {
       if (stale()) return;
+      // Druhé `meta` znamená, že první model neodpověděl a router sáhl po
+      // dalším. Co stihl namyslet, patřilo k odpovědi, která nevznikla —
+      // nechat to viset nad textem od někoho jiného by lhalo.
+      //
+      // Kdo odpovídá teď se drží tady, ne ve zprávě: `drainReasoning` ruší
+      // naplánovaný snímek a vyprazdňuje buffer, a `StrictMode` každou
+      // aktualizační funkci volá dvakrát — uvnitř `setMessages` by se to
+      // provedlo dvakrát taky.
+      const switched = providerRef.current != null && providerRef.current !== providerId;
+      providerRef.current = providerId;
+      if (switched) drainReasoning();
       setMessages((prev) =>
-        patchLast(prev, (m) => {
-          // Druhé `meta` znamená, že první model neodpověděl a router sáhl po
-          // dalším. Co stihl namyslet, patřilo k odpovědi, která nevznikla —
-          // nechat to viset nad textem od někoho jiného by lhalo.
-          const switched = m.provider_id != null && m.provider_id !== providerId;
-          if (switched) drainReasoning();
-          return {
-            ...m,
-            provider_id: providerId,
-            model_name: modelName,
-            note,
-            reasoning: switched ? "" : m.reasoning,
-          };
-        })
+        patchLast(prev, (m) => ({
+          ...m,
+          provider_id: providerId,
+          model_name: modelName,
+          note,
+          reasoning: switched ? "" : m.reasoning,
+        }))
       );
     },
     onReason: (chunk) => {
@@ -610,12 +667,17 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     onReviewStart: () => {
       if (stale()) return;
       const tail = drainBuffer();
-      setMessages((prev) =>
-        patchLast(prev, (m) => {
-          draftRef.current = m.content + tail;
-          return { ...m, content: "", reviewing: true };
-        })
-      );
+      setMessages((prev) => {
+        // Jediný zápis mimo stav, který tu zůstává. `StrictMode` volá
+        // aktualizační funkci dvakrát, ale obě volání dostanou stejné `prev`
+        // a `tail` je zachycená konstanta — druhý průchod tedy zapíše přesně
+        // to samé. Kdyby se sem někdy dostalo něco, co na svém předchozím
+        // výsledku závisí (jako `drainReasoning` o pár řádků výš), musí to
+        // ven; tohle na ničem nezávisí.
+        const last = prev[prev.length - 1];
+        if (last) draftRef.current = last.content + tail;
+        return patchLast(prev, (m) => ({ ...m, content: "", reviewing: true }));
+      });
     },
     onReviewAbort: () => {
       if (stale()) return;
@@ -646,6 +708,11 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           latency_ms: stats?.latency_ms ?? m.latency_ms,
           tokens: stats?.tokens ?? m.tokens,
           reasoning_ms: stats?.reasoning_ms ?? m.reasoning_ms,
+          // Řádek bez `id` neumí nic dalšího: žádný čas, žádné „zkusit
+          // znovu" nad konkrétní zprávou. Backend je posílá v `done`, takže
+          // to nestojí ani jeden dotaz navíc.
+          id: stats?.message_id ?? m.id,
+          created_at: stats?.created_at ?? m.created_at,
         }))
       );
       endStream();
@@ -710,6 +777,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     // Re-announced by the `compact` event if it is still true this turn; an
     // edit can have invalidated the summary since the last one.
     setCompact(null);
+    providerRef.current = null;
     setMessages((prev) => [...prev, { role: "assistant", content: "", streaming: true }]);
     await start(makeHandlers(runId), controller.signal);
   };
@@ -782,6 +850,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     drainBuffer();
     drainReasoning();
     draftRef.current = "";
+    providerRef.current = null;
     setStreaming(false);
     setCompact(null);
   };
@@ -790,14 +859,16 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
 
   const selectConversation = async (id: number) => {
     discardStream();
+    const loadId = (loadIdRef.current += 1);
     setCurrentId(id);
     const data = await guard(() => fetchConversation(id));
-    if (data) setMessages(data.messages);
+    if (data && loadIdRef.current === loadId) setMessages(data.messages);
     if (isMobile()) setSidebarOpen(false);
   };
 
   const newConversation = () => {
     discardStream();
+    loadIdRef.current += 1;
     setCurrentId(null);
     setMessages([]);
     if (isMobile()) setSidebarOpen(false);
@@ -809,6 +880,9 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     // `streaming` shodil až `onDone` o půl minuty později. `discardStream`
     // zároveň posune run id, takže do prázdného seznamu už nikdo nepíše.
     if (id === currentId) discardStream();
+    // I smazání je „vlastník seznamu": rozepsané načtení, které dorazí po
+    // něm, by do prázdna vrátilo vlákno, které už neexistuje.
+    loadIdRef.current += 1;
     await guard(() => deleteConversation(id));
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (id === currentId) {

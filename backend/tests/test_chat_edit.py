@@ -131,7 +131,14 @@ def test_a_run_that_answers_replaces_them(thread, monkeypatch):
     assert _remaining(conversation_id) == ["první otázka", "nová"]
 
 
-def _drive_stream(monkeypatch, conversation_id: int, *, replaces, text: str) -> None:
+def _drive_stream(
+    monkeypatch,
+    conversation_id: int,
+    *,
+    replaces=(),
+    text: str,
+    user_message_id: int | None = None,
+) -> list[dict]:
     """Projede `_stream_response` s vypnutým hledáním, rozpadem i providery."""
 
     async def no_research(*args, **kwargs):
@@ -166,13 +173,13 @@ def _drive_stream(monkeypatch, conversation_id: int, *, replaces, text: str) -> 
         effort_tiers.resolve("light"),
         None,
         replaces=replaces,
+        user_message_id=user_message_id,
     )
 
     async def drain():
-        async for _ in response.body_iterator:
-            pass
+        return [chunk async for chunk in response.body_iterator]
 
-    asyncio.run(drain())
+    return asyncio.run(drain())
 
 
 class _Event:
@@ -189,6 +196,83 @@ class _Event:
         self.tool = None
         self.tool_ok = True
         self.retry_after = None
+
+
+# --- id dostreamované zprávy ------------------------------------------------
+#
+# Prohlížeč si otázku i odpověď vykresluje sám z toho, co proteče streamem, a
+# na řádek bez `id` pak neumí navěsit nic dalšího: tužka na úpravu se
+# nevykreslí, „↑" na poslední otázku nemá co najít, čas se nezobrazí. Fungovalo
+# to až po znovuotevření vlákna — tedy přesně tam, kde už si toho nikdo
+# nevšimne. Obojí id proto jde ven rovnou: otázka ve `start`, odpověď v `done`.
+
+
+def _events(chunks: list[dict], name: str) -> list[dict]:
+    return [json.loads(c["data"]) for c in chunks if c.get("event") == name]
+
+
+def test_start_carries_the_id_of_the_question(thread, monkeypatch):
+    conversation_id, _ = thread
+    chunks = _drive_stream(
+        monkeypatch, conversation_id, text="odpověď", user_message_id=4321
+    )
+    assert _events(chunks, "start")[0]["user_message_id"] == 4321
+
+
+def test_done_carries_the_id_of_the_saved_answer(thread, monkeypatch):
+    """`done` odchází až za zápisem — dřív id neexistuje."""
+    conversation_id, ids = thread
+    chunks = _drive_stream(monkeypatch, conversation_id, text="nová odpověď")
+
+    done = _events(chunks, "done")[0]
+    with Session(engine) as session:
+        saved = chat_api._rows(session, conversation_id)[-1]
+    assert done["message_id"] == saved.id
+    assert saved.id not in ids  # opravdu ta nová, ne poslední stará
+    assert done["created_at"] == saved.created_at.isoformat()
+
+
+def test_a_run_that_saved_nothing_still_ends_the_stream(thread, monkeypatch):
+    """Bez odpovědi není id — `done` ale musí dorazit, jinak UI zůstane viset.
+
+    Zdržet `done` až za zápis znamená, že běh, který nic nezapsal, ho může
+    ztratit úplně. Front-end na něm stojí: dokud nepřijde, drží `streaming`.
+    """
+    conversation_id, _ = thread
+
+    async def nothing(*args, **kwargs):
+        return
+        yield  # pragma: no cover
+
+    async def only_done(*args, **kwargs):
+        yield _Event("done")
+
+    monkeypatch.setattr(chat_api.researching, "run", nothing)
+    monkeypatch.setattr(chat_api.decomposing, "run", nothing)
+    monkeypatch.setattr(chat_api, "stream_chat", only_done)
+
+    response = chat_api._stream_response(
+        conversation_id,
+        [{"role": "user", "content": "otázka"}],
+        planning.Plan(
+            capability="general",
+            complexity="simple",
+            goal="",
+            directives="",
+            source="heuristika",
+            planner_model=None,
+            needs_search=False,
+        ),
+        effort_tiers.resolve("light"),
+        None,
+    )
+
+    async def drain():
+        return [chunk async for chunk in response.body_iterator]
+
+    done = _events(asyncio.run(drain()), "done")
+    assert len(done) == 1
+    assert done[0]["message_id"] is None
 
 
 def test_the_stream_shape_is_still_sse(thread, monkeypatch):
