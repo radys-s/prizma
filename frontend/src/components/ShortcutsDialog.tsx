@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { useFocusTrap } from "../lib/useFocusTrap";
 
 interface Shortcut {
   keys: string[];
@@ -44,17 +45,16 @@ const SECTIONS: Section[] = [
 ];
 
 export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useFocusTrap<HTMLDivElement>();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
+      // `stopPropagation` tu bylo, ale proti posluchači na tomtéž uzlu
+      // nedělá nic: zavřít tenhle přehled uprostřed odpovědi tu odpověď
+      // zároveň zastavilo. Globální zkratka se teď ptá `anyOverlayOpen()`.
+      if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    dialogRef.current?.focus();
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 

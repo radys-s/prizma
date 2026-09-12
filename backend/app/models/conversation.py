@@ -13,6 +13,13 @@ class Conversation(SQLModel, table=True):
     title: str = "Nová konverzace"
     created_at: datetime = Field(default_factory=utcnow)
 
+    # Kdy se ve vlákně naposled něco stalo. Postranní panel podle toho řadí i
+    # bucketuje — konverzace založená před třemi týdny a použitá před pěti
+    # minutami patří pod „Dnes“, ne pod „Starší“. Nullable jenom kvůli řádkům,
+    # které vznikly dřív, než sloupec existoval; migrace v app/db.py je doplní
+    # na `max(created_at, poslední zpráva)`.
+    updated_at: Optional[datetime] = Field(default_factory=utcnow)
+
     # Auto-compact state. Once a thread outgrows the executor's context budget,
     # `routing/compact.py` folds its oldest turns into `summary` and records how
     # far it got in `summarized_through_id`. Persisted rather than recomputed so

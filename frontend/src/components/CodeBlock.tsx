@@ -26,7 +26,13 @@ export function CodeBlock({ language, text, children }: Props) {
           {copied ? "Zkopírováno" : "Kopírovat"}
         </button>
       </div>
-      <pre>{children}</pre>
+      {/* Široký blok se posouvá vodorovně. Bez `tabIndex` se do něj z
+          klávesnice nedá dostat, takže konec dlouhého řádku je myší
+          dosažitelný a jinak ne. `role="region"` s popiskem dává odečítači
+          důvod, proč je ten prvek zaostřitelný. */}
+      <pre tabIndex={0} role="region" aria-label={`Kód${language ? ` (${language})` : ""}`}>
+        {children}
+      </pre>
     </div>
   );
 }

@@ -97,7 +97,7 @@ export function ToolsMenu({
         className="picker-trigger tools-trigger"
         onClick={() => setOpen((v) => !v)}
         disabled={disabled}
-        aria-haspopup="dialog"
+        aria-haspopup="true"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         aria-label={anyOn ? `Nástroje: ${label}` : "Nástroje: žádné"}
@@ -111,7 +111,9 @@ export function ToolsMenu({
       </button>
 
       {open && (
-        <div className="tools-panel" id={panelId} role="dialog" aria-label="Nástroje">
+        /* `role="group"`, ne `dialog`: panel fokus nedrží a nic nezavírá — je to
+           skupina přepínačů. `aria-label` bez role by odečítač zahodil. */
+        <div className="tools-panel" id={panelId} role="group" aria-label="Nástroje">
           <div className="tool-row" data-on={webOn}>
             <span className="tool-icon" aria-hidden>
               <Globe size={17} />

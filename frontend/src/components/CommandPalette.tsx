@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { Theme } from "../lib/theme";
 import type { Conversation, RoutingOptions } from "../lib/types";
+import { useFocusTrap } from "../lib/useFocusTrap";
 
 interface Command {
   id: string;
@@ -90,8 +91,9 @@ export function CommandPalette({
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => inputRef.current?.focus(), []);
+  // Fokus dovnitř, po zavření zpátky na to, odkud se paleta otevřela. Pole
+  // je první ovládací prvek uvnitř, takže ho past zaostří sama.
+  const dialogRef = useFocusTrap<HTMLDivElement>();
 
   const commands = useMemo<Command[]>(() => {
     const done = (fn: () => void) => () => {
@@ -275,6 +277,7 @@ export function CommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label="Příkazy"
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
@@ -302,19 +305,36 @@ export function CommandPalette({
           aria-label="Hledat příkaz"
           spellCheck={false}
           autoComplete="off"
+          // Šipky mění vybranou položku, ale fokus zůstává v poli, takže
+          // odečítač obrazovky neměl co ohlásit — pohyboval se kurzor, o
+          // kterém nevěděl. `aria-activedescendant` je způsob, jak mu říct
+          // „vybrané je tohle", aniž by se fokus hnul.
+          role="combobox"
+          aria-expanded
+          aria-controls="palette-list"
+          aria-activedescendant={matches[active] ? `palette-opt-${matches[active].id}` : undefined}
         />
 
-        <div className="palette-list" ref={listRef} role="listbox" aria-label="Příkazy">
+        <div
+          className="palette-list"
+          id="palette-list"
+          ref={listRef}
+          role="listbox"
+          aria-label="Příkazy"
+        >
           {matches.length === 0 && <p className="palette-empty">Nic takového tu není.</p>}
           {matches.map((command, index) => {
             const header = command.group !== lastGroup ? command.group : null;
             lastGroup = command.group;
             return (
-              <div key={command.id}>
+              // `role="presentation"`: mezi `listbox` a `option` nesmí být
+              // prvek s vlastní rolí, jinak se seznam rozpadne na nic.
+              <div key={command.id} role="presentation">
                 {header && <p className="palette-group">{header}</p>}
                 <button
                   type="button"
                   role="option"
+                  id={`palette-opt-${command.id}`}
                   aria-selected={index === active}
                   aria-disabled={command.disabled}
                   data-index={index}

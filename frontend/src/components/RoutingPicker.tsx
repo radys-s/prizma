@@ -128,6 +128,11 @@ export function RoutingPicker({ label, icon, options, value, onChange, disabled 
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
+        /* Fokus zůstává na spouštěči, takže bez tohohle odečítač při
+           projíždění šipkami nic neřekne — položka se jen vizuálně zvýrazní. */
+        aria-activedescendant={
+          open && options[active] ? `${listId}-${options[active].id}` : undefined
+        }
         aria-label={`${label}: ${selected?.label ?? ""}`}
         title={`${label}: ${selected?.label ?? ""}`}
       >
@@ -141,6 +146,7 @@ export function RoutingPicker({ label, icon, options, value, onChange, disabled 
           {options.map((option, index) => (
             <button
               key={option.id}
+              id={`${listId}-${option.id}`}
               type="button"
               data-index={index}
               role="option"

@@ -2,7 +2,7 @@ import logging
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import event, text
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, col, create_engine, select
 
 from app.config import settings
 
@@ -140,6 +140,10 @@ _CONVERSATION_COLUMNS: dict[str, str] = {
     # represented by the summary and is not resent; everything above is verbatim.
     "summarized_through_id": "INTEGER",
     "pinned": "BOOLEAN NOT NULL DEFAULT 0",
+    # Poslední aktivita ve vlákně. Nullable schválně: `ALTER TABLE` neumí dát
+    # existujícím řádkům rozumnou hodnotu, tu dopočítá `_backfill_updated_at()`
+    # hned po migraci.
+    "updated_at": "TIMESTAMP",
 }
 
 # And on `appuser`, which existed before it had any second factor to remember.
@@ -270,6 +274,37 @@ def _backfill_identities() -> None:
             session.commit()
 
 
+def _backfill_updated_at() -> None:
+    """Give pre-existing threads a last-activity stamp.
+
+    Bez toho by každá konverzace z doby před sloupcem měla `updated_at = NULL`
+    a v panelu by spadla úplně dolů — právě ta vlákna, ve kterých uživatel
+    strávil nejvíc času. Hodnota je `max(created_at, poslední zpráva)`, což je
+    nejlepší odhad toho, co by sloupec obsahoval, kdyby tam byl od začátku.
+
+    ORM místo SQL, aby to běželo stejně na SQLite i Postgresu. Po prvním běhu
+    je to no-op — dotaz nic nevrátí.
+    """
+    from app.models.conversation import Conversation, Message
+
+    with Session(engine) as session:
+        stale = session.exec(
+            select(Conversation).where(col(Conversation.updated_at).is_(None))
+        ).all()
+        if not stale:
+            return
+        for conversation in stale:
+            last = session.exec(
+                select(Message.created_at)
+                .where(Message.conversation_id == conversation.id)
+                .order_by(col(Message.created_at).desc())
+                .limit(1)
+            ).first()
+            conversation.updated_at = max(conversation.created_at, last or conversation.created_at)
+            session.add(conversation)
+        session.commit()
+
+
 def init_db() -> None:
     from app.models import auth  # noqa: F401  (register models before create_all)
     from app.models import conversation  # noqa: F401
@@ -278,6 +313,7 @@ def init_db() -> None:
 
     SQLModel.metadata.create_all(engine)
     _migrate()
+    _backfill_updated_at()
     _backfill_identities()
 
 

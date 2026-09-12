@@ -102,6 +102,12 @@ export interface Conversation {
   id: number;
   title: string;
   created_at: string;
+  /**
+   * Kdy se ve vlákně naposled něco stalo. Panel podle toho řadí i bucketuje —
+   * podle `created_at` by konverzace, ve které se píše celý týden, spadla pod
+   * „Starší“. Volitelné jen kvůli starším odpovědím serveru.
+   */
+  updated_at?: string;
   /** Pinned threads sort above every day bucket in the sidebar. */
   pinned: boolean;
 }
