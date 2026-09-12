@@ -47,8 +47,9 @@ LOCAL_WRITE = "tools.write"
 TOOLS_ROOTS = "tools.roots"
 TOOLS_ROOTS_MAX = 1000
 
-# Only booleans belong here: `all_bools()` iterates it, and a text default
-# would come back as `False`.
+# Výchozí hodnoty pro klíče, které v databázi ještě nikdo nenastavil. Zatím
+# samé „0"/„1", protože všechny přepínače jsou booleany — `get_bool` čte
+# přesně tenhle tvar.
 DEFAULTS: dict[str, str] = {READ_PAGES: "1", LOCAL_TOOLS: "0", LOCAL_WRITE: "0"}
 
 _cache: dict[str, str] = {}

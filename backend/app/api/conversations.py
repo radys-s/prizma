@@ -2,6 +2,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import delete
 from sqlmodel import Session, col, select
 
 from app.db import get_session
@@ -235,12 +236,17 @@ def pin_conversation(
 
 @router.delete("/{conversation_id}")
 def delete_conversation(conversation_id: int, session: Session = Depends(get_session)):
+    """Smaže vlákno i s jeho zprávami.
+
+    Jedním `DELETE`, ne řádek po řádku. Nejde jen o počet dotazů: cizí klíče
+    jsou od té doby, co je databáze vynucuje, na pořadí citlivé. Když se
+    zprávy i vlákno smažou v jednom flushi, SQLAlchemy nemá mezi nimi žádný
+    vztah, podle kterého by je seřadilo — a poslalo napřed `DELETE` vlákna,
+    na kterém neprošel cizí klíč. Hromadný příkaz jde na server hned, takže
+    v okamžiku mazání vlákna už žádná zpráva na nic neukazuje.
+    """
     conversation = _conversation_or_404(session, conversation_id)
-    messages = session.exec(
-        select(Message).where(Message.conversation_id == conversation_id)
-    ).all()
-    for m in messages:
-        session.delete(m)
+    session.exec(delete(Message).where(Message.conversation_id == conversation_id))
     session.delete(conversation)
     session.commit()
     return {"ok": True}

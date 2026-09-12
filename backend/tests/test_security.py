@@ -353,3 +353,45 @@ def test_publicly_a_correct_code_still_leaves_the_global_bucket_alone(db, monkey
     assert db.get(LoginAttempt, "10.0.0.7") is None
     assert db.get(LoginAttempt, throttle.GLOBAL_SCOPE) is not None
     throttle.reset(db)
+
+
+# ----------------------------------------------- úklid propadlých relací (F4)
+
+
+def test_expired_sessions_are_pruned_when_a_new_one_is_issued(db):
+    """Tabulka relací jinak rostla s každým přihlášením a nikdy neklesala.
+
+    Propadlý řádek mazal jen `resolve_session`, a to výhradně ve chvíli, kdy
+    někdo ten konkrétní token ukázal. Prohlížeč, který se už nikdy nevrátí, po
+    sobě proto nechal záznam navěky. Úklid visí na vzniku nové relace — jediném
+    místě, kterým projde každé přihlášení.
+    """
+    from datetime import timedelta
+
+    from app.db import init_db
+    from app.models.auth import AppUser, AuthSession
+
+    # Tabulky jinak zakládá až lifespan aplikace; tenhle test klienta nemá.
+    init_db()
+
+    user = AppUser(provider="local", subject="prune-test")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    db.add(
+        AuthSession(
+            token_hash="dead",
+            user_id=user.id,
+            csrf_token="x",
+            expires_at=utcnow() - timedelta(days=1),
+        )
+    )
+    db.commit()
+
+    core.create_session(db, user.id)
+
+    left = db.exec(select(AuthSession).where(AuthSession.user_id == user.id)).all()
+    # Zůstane jen ta právě vydaná.
+    assert [row.token_hash for row in left if row.token_hash == "dead"] == []
+    assert len(left) == 1

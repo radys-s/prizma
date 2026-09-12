@@ -71,8 +71,36 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def prune_expired(session: Session) -> int:
+    """Zahodí propadlé relace. -> kolik jich zmizelo.
+
+    `resolve_session` uklidí jen ten řádek, jehož token někdo právě ukázal —
+    takže po prohlížeči, který se už nikdy nevrátí, zůstane záznam navěky.
+    Tabulka pak roste s každým přihlášením a nikdy neklesá. Úklid visí na
+    vzniku nové relace: je to jediné místo, kterým projde každé přihlášení,
+    a stojí jeden `DELETE` za sezení.
+    """
+    now = utcnow()
+    dropped = 0
+    for row in session.exec(select(AuthSession)).all():
+        # Porovnává se v Pythonu, ne v SQL: SQLite vrací naivní UTC a
+        # `utcnow()` je s časovou zónou — v dotazu by se srovnávaly řetězce
+        # s příponou `+00:00` proti řetězcům bez ní. Stejný důvod má převod
+        # v `resolve_session` níž.
+        expires = row.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires <= now:
+            session.delete(row)
+            dropped += 1
+    if dropped:
+        session.commit()
+    return dropped
+
+
 def create_session(session: Session, user_id: int) -> tuple[str, str]:
     """Returns (session_token, csrf_token). Only their hashes/values persist."""
+    prune_expired(session)
     token = secrets.token_urlsafe(32)
     csrf = secrets.token_urlsafe(24)
     session.add(
@@ -110,12 +138,6 @@ def revoke_session(session: Session, token: str | None) -> None:
     if row is not None:
         session.delete(row)
         session.commit()
-
-
-def revoke_all_for_user(session: Session, user_id: int) -> None:
-    for row in session.exec(select(AuthSession).where(AuthSession.user_id == user_id)).all():
-        session.delete(row)
-    session.commit()
 
 
 def revoke_others(session: Session, user_id: int, keep_token: str | None) -> int:
