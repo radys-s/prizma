@@ -18,6 +18,9 @@ import { ToolsMenu } from "./ToolsMenu";
 
 const MAX_HEIGHT_PX = 200;
 
+/** Jak dlouho se čeká, než koncept dopadne do `localStorage`. */
+const DRAFT_SAVE_MS = 400;
+
 export interface ComposerHandle {
   /** Used by the suggestion chips to drop text into the box and focus it. */
   prefill: (text: string) => void;
@@ -103,11 +106,30 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey]);
 
+  // Koncept se ukládá se zpožděním. `localStorage.setItem` je synchronní a
+  // blokuje hlavní vlákno — tedy přesně to, které ve stejnou chvíli sází
+  // markdown odpovědi. Při psaní to znamenalo jeden zápis na stisk klávesy.
+  //
+  // `flush` běží při odchodu z pole a při odpojení, aby se poslední věta
+  // nikdy neztratila jenom proto, že uživatel zavřel kartu do 400 ms.
+  const pendingRef = useRef<{ key: string; value: string } | null>(null);
+
+  const flushDraft = useCallback(() => {
+    const pending = pendingRef.current;
+    if (!pending) return;
+    pendingRef.current = null;
+    if (pending.value.trim()) saveSetting(pending.key, pending.value);
+    else clearSetting(pending.key);
+  }, []);
+
   useEffect(() => {
     if (ownerRef.current !== draftKey) return;
-    if (value.trim()) saveSetting(draftKey, value);
-    else clearSetting(draftKey);
-  }, [draftKey, value]);
+    pendingRef.current = { key: draftKey, value };
+    const timer = window.setTimeout(flushDraft, DRAFT_SAVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [draftKey, value, flushDraft]);
+
+  useEffect(() => flushDraft, [flushDraft]);
 
   // Auto-grow: reset to auto first so the box can also shrink again.
   //
@@ -174,6 +196,8 @@ export function Composer({
     if (!text || streaming || disabled) return;
     onSend(text);
     setValue("");
+    // Čekající zápis by odeslaný text vrátil zpátky do slotu o 400 ms později.
+    pendingRef.current = null;
     clearSetting(draftKey);
   };
 
@@ -193,6 +217,7 @@ export function Composer({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            onBlur={flushDraft}
             placeholder="Napiš zprávu…"
             rows={1}
             disabled={disabled}

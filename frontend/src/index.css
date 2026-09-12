@@ -1823,6 +1823,12 @@ button.conversation-item:focus-visible {
   text-wrap: pretty;
 }
 
+/* Náhrada, než se dotáhne parser markdownu. Není to hotová sazba, ale je to
+   text odpovědi — a ten se při čekání na chunk nesmí ztratit. */
+.prose-plain {
+  white-space: pre-wrap;
+}
+
 /* Samotný závěr, zvýrazněný.
 
    Dohoda s modelem je v `_HOUSE_RULES`: má-li otázka konkrétní výsledek,

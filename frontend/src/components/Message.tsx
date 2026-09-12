@@ -10,12 +10,12 @@ import {
   Shuffle,
   TriangleAlert,
 } from "lucide-react";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { memo, useEffect, useRef, useState, type MouseEvent } from "react";
 import { absoluteTime, relativeTime } from "../lib/date";
 import { useCopy } from "../lib/useCopy";
 import { scrollBehavior } from "../lib/motion";
 import type { Message as ChatMessage, Source } from "../lib/types";
-import { Markdown } from "./Markdown";
+import { MarkdownLazy } from "./MarkdownLazy";
 import { ProviderMark } from "./ProviderMark";
 import { Reasoning } from "./Reasoning";
 import { SearchSteps } from "./SearchSteps";
@@ -26,8 +26,14 @@ interface Props {
   onRegenerate?: () => void;
   /** Present only on a failed answer that is still the last thing in the thread. */
   onRetry?: () => void;
-  /** Rewrites this user message and re-runs the thread from here. */
-  onEdit?: (content: string) => void;
+  /**
+   * Rewrites this user message and re-runs the thread from here.
+   *
+   * Dostává celou zprávu, ne jenom text: kdyby si aplikace musela obsluhu
+   * navázat na pořadí řádku, vznikala by při každém snímku streamu nová
+   * funkce pro každou zprávu — a `memo` níž by tím ztratilo smysl.
+   */
+  onEdit?: (message: ChatMessage, content: string) => void;
   /**
    * Bumped by the app when ↑ in an empty composer asks for the last user
    * message. A counter rather than a boolean, because pressing ↑ again
@@ -182,7 +188,12 @@ function withSources(message: ChatMessage): string {
   return [message.content, "", "**Zdroje**", "", ...list].join("\n");
 }
 
-export function Message({
+/**
+ * `memo`, protože `patchLast` vrací při každém snímku streamu nové pole —
+ * a bez něj se překreslovalo všech N zpráv ve vlákně šedesátkrát za vteřinu,
+ * i když se měnila jenom ta poslední.
+ */
+export const Message = memo(function Message({
   message,
   onRegenerate,
   onRetry,
@@ -222,7 +233,7 @@ export function Message({
       const submit = () => {
         const text = draft.trim();
         setDraft(null);
-        if (text && text !== message.content) onEdit?.(text);
+        if (text && text !== message.content) onEdit?.(message, text);
       };
       return (
         <div className="message user editing">
@@ -479,10 +490,11 @@ export function Message({
       <Reasoning message={message} />
 
       {message.content && (
-        <Markdown
+        <MarkdownLazy
           content={message.content}
           sourceCount={sources.length}
           anchorPrefix={prefix}
+          streaming={message.streaming}
         />
       )}
 
@@ -611,4 +623,4 @@ export function Message({
       )}
     </div>
   );
-}
+});
