@@ -10,7 +10,7 @@ import {
   type Ref,
 } from "react";
 
-import { clearSetting, loadSetting, saveSetting } from "../lib/storage";
+import { NEW_DRAFT_KEY, clearSetting, loadSetting, saveSetting } from "../lib/storage";
 import type { ComputerMode, RoutingOptions } from "../lib/types";
 import { EffortSegments } from "./EffortSegments";
 import { RoutingPicker, type PickerOption } from "./RoutingPicker";
@@ -89,8 +89,18 @@ export function Composer({
 
   useEffect(() => {
     if (ownerRef.current === draftKey) return;
+    // Odeslání první zprávy vypadá takhle: composer se vyprázdní a smaže slot
+    // „new", a o půl sekundy později dorazí `start` s číslem konverzace —
+    // teprve tehdy se přepíná vlastník. Co uživatel mezitím napsal, tenhle
+    // efekt přepsal obsahem nového slotu, tedy prázdnem. Text, který ještě
+    // nikam nepatří, se proto stěhuje s sebou; přepnutí mezi dvěma existujícími
+    // vlákny se nemění — tam si každé svůj koncept uložilo samo.
+    const carried = ownerRef.current === NEW_DRAFT_KEY ? value : "";
     ownerRef.current = draftKey;
-    setValue(loadSetting(draftKey, ""));
+    setValue(carried.trim() ? carried : loadSetting(draftKey, ""));
+    // `value` schválně mimo závislosti: efekt se spouští při změně vlastníka,
+    // ne při každém stisku klávesy.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey]);
 
   useEffect(() => {

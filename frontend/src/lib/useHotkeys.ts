@@ -36,7 +36,12 @@ function inTextField(target: EventTarget | null): boolean {
  */
 export function useHotkeys(hotkeys: Hotkey[]): void {
   const ref = useRef(hotkeys);
-  ref.current = hotkeys;
+  // V efektu, ne při renderu: render se může spustit a zahodit (concurrent
+  // režim, `StrictMode`), a zápis do refu z takového průchodu by v refu nechal
+  // handlery, které nikdy nic nevykreslily.
+  useEffect(() => {
+    ref.current = hotkeys;
+  });
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

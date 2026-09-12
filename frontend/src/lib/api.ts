@@ -407,7 +407,7 @@ export async function searchMessages(query: string): Promise<MessageHit[]> {
 /* ---------------------------------------------------------------- chat --- */
 
 export interface StreamHandlers {
-  onStart?: (conversationId: number, capability: string) => void;
+  onStart?: (conversationId: number, capability: string, userMessageId?: number) => void;
   /** The thread was too long, so its older turns were folded into a summary. */
   onCompact?: (info: CompactInfo) => void;
   /** The front model's decision, before a single answer token arrives. */
@@ -469,6 +469,8 @@ export interface DoneStats {
   tokens?: number;
   /** Jak dlouho model přemýšlel, než napsal první token. Absent, když ne. */
   reasoning_ms?: number;
+  message_id?: number;
+  created_at?: string;
 }
 
 /** What the pickers contribute to a chat request. */
@@ -578,6 +580,7 @@ async function runStream(
   }
 
   if (res.status === 401) {
+    res.body?.cancel().catch(() => {});
     handlers.onUnauthenticated?.();
     return;
   }
@@ -590,6 +593,12 @@ async function runStream(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  // Řekl stream sám, že končí? Restart uvicornu ani timeout proxy žádné
+  // `done` nepošlou a UI pak drží `streaming` navždy, takže se konec musí
+  // ohlásit i za ně — ale jen když se neohlásil sám. Zavolat `onDone`
+  // podruhé znamená přepsat `revised` na false u odpovědi, která revizí
+  // prošla.
+  let ended = false;
 
   try {
     while (true) {
@@ -601,15 +610,30 @@ async function runStream(
       while ((sepIndex = buffer.search(/\r?\n\r?\n/)) !== -1) {
         const rawEvent = buffer.slice(0, sepIndex);
         buffer = buffer.slice(sepIndex).replace(/^\r?\n\r?\n/, "");
-        handleEvent(rawEvent, handlers);
+        if (handleEvent(rawEvent, handlers)) ended = true;
       }
     }
+    const trailing = decoder.decode();
+    if (trailing) buffer += trailing;
+    let sepIndex: number;
+    while ((sepIndex = buffer.search(/\r?\n\r?\n/)) !== -1) {
+      const rawEvent = buffer.slice(0, sepIndex);
+      buffer = buffer.slice(sepIndex).replace(/^\r?\n\r?\n/, "");
+      if (handleEvent(rawEvent, handlers)) ended = true;
+    }
+    // Poslední událost bez uzavírajícího prázdného řádku. Server ho posílá
+    // vždycky, ale spojení přerušené o jeden bajt dřív by jinak zahodilo
+    // celé `done` — včetně id, na kterém stojí úprava zprávy.
+    if (buffer.trim() && handleEvent(buffer, handlers)) ended = true;
+    if (!ended) handlers.onDone?.(false);
   } catch (err) {
     if (isAbort(err)) {
       handlers.onDone?.(false);
       return;
     }
     handlers.onError?.("Spojení se serverem se přerušilo.");
+  } finally {
+    reader.cancel().catch(() => {});
   }
 }
 
@@ -617,17 +641,26 @@ function isAbort(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
 }
 
-function handleEvent(raw: string, handlers: StreamHandlers): void {
+/** Vrací `true`, když ta událost stream ukončila (`done` nebo `error`). */
+function handleEvent(raw: string, handlers: StreamHandlers): boolean {
   let eventType = "message";
   let data = "";
   for (const line of raw.split(/\r?\n/)) {
-    if (line.startsWith("event:")) eventType = line.slice(6).trim();
-    else if (line.startsWith("data:")) data += line.slice(5).trim();
+    // Komentář — server ho posílá jako keep-alive, aby proxy spojení
+    // neuspala. Žádná data v něm nejsou.
+    if (line.startsWith(":")) continue;
+    if (line.startsWith("event:")) {
+      eventType = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      const lineData = line.startsWith("data: ") ? line.slice(6) : line.slice(5);
+      data += (data ? "\n" : "") + lineData;
+    }
   }
-  if (!data) return;
+  if (!data) return false;
 
   let payload: {
     conversation_id?: number;
+    user_message_id?: number;
     capability?: string;
     complexity?: string;
     goal?: string;
@@ -657,6 +690,8 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
     latency_ms?: number;
     tokens?: number;
     reasoning_ms?: number | null;
+    message_id?: number;
+    created_at?: string;
     folded?: number;
     kept?: number;
     fallback?: boolean;
@@ -667,12 +702,12 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
   try {
     payload = JSON.parse(data);
   } catch {
-    return;
+    return false;
   }
 
   switch (eventType) {
     case "start":
-      handlers.onStart?.(payload.conversation_id!, payload.capability!);
+      handlers.onStart?.(payload.conversation_id!, payload.capability!, payload.user_message_id);
       break;
     case "compact":
       handlers.onCompact?.({
@@ -760,10 +795,13 @@ function handleEvent(raw: string, handlers: StreamHandlers): void {
         latency_ms: payload.latency_ms,
         tokens: payload.tokens,
         reasoning_ms: payload.reasoning_ms ?? undefined,
+        message_id: payload.message_id,
+        created_at: payload.created_at,
       });
-      break;
+      return true;
     case "error":
       handlers.onError?.(payload.content ?? "Neznámá chyba");
-      break;
+      return true;
   }
+  return false;
 }

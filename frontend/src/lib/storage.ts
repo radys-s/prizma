@@ -49,3 +49,12 @@ export function clearSettingsWithPrefix(prefix: string): void {
     /* same as above */
   }
 }
+
+/** One unsent-draft slot per conversation; "new" until the thread has an id. */
+export const DRAFT_PREFIX = "prizma.draft.";
+
+export const draftKeyFor = (conversationId: number | null): string =>
+  `${DRAFT_PREFIX}${conversationId ?? "new"}`;
+
+/** The slot a message is typed into before the conversation exists. */
+export const NEW_DRAFT_KEY = draftKeyFor(null);

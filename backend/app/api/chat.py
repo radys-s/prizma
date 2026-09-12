@@ -171,6 +171,7 @@ def _stream_response(
     name_from: str | None = None,
     use_tools: bool = True,
     allow_commands: bool = False,
+    user_message_id: int | None = None,
 ) -> EventSourceResponse:
     """Streams one answer and persists it, even if the client hangs up early.
 
@@ -187,6 +188,12 @@ def _stream_response(
     `name_from` is the question a brand-new conversation should be named after;
     the naming call is fired after the answer is saved and is never awaited by
     the stream.
+
+    `user_message_id` je id právě zapsané otázky. Jde ven ve `start`, protože
+    prohlížeč si zprávu vykreslí sám a bez id s ní neumí nic dalšího: tužka na
+    úpravu se nevykreslí, „↑" na poslední otázku nemá co najít a nezobrazí se
+    čas. Dokud se id posílalo jen v seznamu zpráv, fungovalo to až po znovu-
+    otevření vlákna — tedy přesně tam, kde si toho nikdo nevšimne.
     """
 
     async def event_generator():
@@ -197,7 +204,11 @@ def _stream_response(
         yield {
             "event": "start",
             "data": json.dumps(
-                {"conversation_id": conversation_id, "capability": plan.capability}
+                {
+                    "conversation_id": conversation_id,
+                    "capability": plan.capability,
+                    "user_message_id": user_message_id,
+                }
             ),
         }
         # Before the plan, because it happened before the plan: the thread was
@@ -333,6 +344,15 @@ def _stream_response(
         reasoning = ""
         reasoning_ms = 0
         reasoning_started_at: float | None = None
+        # `done` se posílá až za uložením odpovědi — viz `finally`. Do té doby
+        # čeká tady, protože právě v uložení vzniká id, které prohlížeč
+        # potřebuje, aby se s hotovou zprávou dalo pracovat.
+        pending_done: dict | None = None
+        saved_id: int | None = None
+        saved_at: str | None = None
+        # Zhasne, jakmile posluchač zmizí. `finally` pak odpověď ještě uloží,
+        # ale nepokouší se do zavřeného generátoru nic poslat.
+        listening = True
         try:
             async for ev in stream_chat(
                 messages,
@@ -397,11 +417,20 @@ def _stream_response(
                     payload["latency_ms"] = latency_ms
                     payload["tokens"] = tokens
                     payload["reasoning_ms"] = reasoning_ms or None
+                    # `done` je poslední událost streamu (`client.py` za ním
+                    # rovnou vrací), takže se dá zadržet, aniž by se cokoli
+                    # přeskupilo — a odejde s id uložené zprávy.
+                    pending_done = payload
+                    continue
                 yield {"event": ev.type, "data": json.dumps(payload)}
         except selector.NotEnoughProviders as exc:
             yield {"event": "error", "data": json.dumps({"content": str(exc)})}
         except selector.NoProviderAvailable as exc:
             yield {"event": "error", "data": json.dumps({"content": str(exc)})}
+        except (GeneratorExit, asyncio.CancelledError):
+            # Stop nebo zavřená záložka. Uložit se ještě musí, poslat už nejde.
+            listening = False
+            raise
         finally:
             if in_review:
                 # Stopped mid-revision: the draft is a complete answer, the
@@ -436,37 +465,39 @@ def _stream_response(
                         if stale is not None:
                             save_session.delete(stale)
                     if assistant_text:
-                        save_session.add(
-                            Message(
-                                conversation_id=conversation_id,
-                                role="assistant",
-                                content=assistant_text,
-                                provider_id=used_provider,
-                                model_name=used_model,
-                                capability=plan.capability,
-                                complexity=plan.complexity,
-                                effort=profile.id,
-                                planner_model=plan.planner_model,
-                                substituted_from=substituted_from,
-                                revised=revised,
-                                # Only on success: the badge means "this answer
-                                # used the web", and a search that aborted did not.
-                                search_mode=depth if findings else None,
-                                sources=researching.sources_json(findings),
-                                parts=decomposing.parts_json(breakdown),
-                                # Ořezané: uvažování bývá delší než odpověď a je to
-                                # doprovodný materiál, ne obsah vlákna. Do dalšího
-                                # kola se neposílá — historie se skládá z `content`.
-                                reasoning=reasoning[:_REASONING_MAX] or None,
-                                reasoning_ms=reasoning_ms or None,
-                                # Measured even when the stream was cut short, so a
-                                # stopped answer still reports the time it took.
-                                latency_ms=latency_ms
-                                or int((time.monotonic() - started_at) * 1000),
-                                tokens=tokens or None,
-                            )
+                        saved = Message(
+                            conversation_id=conversation_id,
+                            role="assistant",
+                            content=assistant_text,
+                            provider_id=used_provider,
+                            model_name=used_model,
+                            capability=plan.capability,
+                            complexity=plan.complexity,
+                            effort=profile.id,
+                            planner_model=plan.planner_model,
+                            substituted_from=substituted_from,
+                            revised=revised,
+                            # Only on success: the badge means "this answer
+                            # used the web", and a search that aborted did not.
+                            search_mode=depth if findings else None,
+                            sources=researching.sources_json(findings),
+                            parts=decomposing.parts_json(breakdown),
+                            # Ořezané: uvažování bývá delší než odpověď a je to
+                            # doprovodný materiál, ne obsah vlákna. Do dalšího
+                            # kola se neposílá — historie se skládá z `content`.
+                            reasoning=reasoning[:_REASONING_MAX] or None,
+                            reasoning_ms=reasoning_ms or None,
+                            # Measured even when the stream was cut short, so a
+                            # stopped answer still reports the time it took.
+                            latency_ms=latency_ms
+                            or int((time.monotonic() - started_at) * 1000),
+                            tokens=tokens or None,
                         )
+                        save_session.add(saved)
                         save_session.commit()
+                        save_session.refresh(saved)
+                        saved_id = saved.id
+                        saved_at = saved.created_at.isoformat()
 
                 if name_from:
                     # Fire and forget. The stream is over; making the user wait
@@ -478,6 +509,13 @@ def _stream_response(
                     )
                     _naming.add(task)
                     task.add_done_callback(_naming.discard)
+
+            if listening and pending_done is not None:
+                # Teprve teď má odpověď id a čas. Bez nich se s dostreamovanou
+                # zprávou nedalo nic dělat až do znovuotevření vlákna.
+                pending_done["message_id"] = saved_id
+                pending_done["created_at"] = saved_at
+                yield {"event": "done", "data": json.dumps(pending_done)}
 
     return EventSourceResponse(event_generator())
 
@@ -512,8 +550,12 @@ async def chat_stream(
         name_from = None
 
     conversation_id = conversation.id
-    session.add(Message(conversation_id=conversation_id, role="user", content=req.message))
+    question = Message(
+        conversation_id=conversation_id, role="user", content=req.message
+    )
+    session.add(question)
     session.commit()
+    session.refresh(question)
 
     rows = _rows(session, conversation_id)
     messages, compact_info = await compacting.prepare(session, conversation, rows)
@@ -535,6 +577,7 @@ async def chat_stream(
         name_from=name_from,
         use_tools=tools_on,
         allow_commands=req.allow_commands,
+        user_message_id=question.id,
     )
 
 
