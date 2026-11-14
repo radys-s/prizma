@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import spa
-from app.api import auth, chat, conversations, providers, routing, settings as settings_api
+from app.api import auth, chat, conversations, gateway, providers, routing, settings as settings_api
 from app.auth.guard import require_auth
 from app.auth.hardening import HardeningMiddleware
 from app.config import check_public_mode, settings
@@ -95,6 +95,8 @@ app.include_router(conversations.router, dependencies=protected)
 app.include_router(chat.router, dependencies=protected)
 app.include_router(routing.router, dependencies=protected)
 app.include_router(settings_api.router, dependencies=protected)
+# Bearer-token auth of its own (no session, no CSRF): callers are programs.
+app.include_router(gateway.router)
 
 
 @app.get("/api/health")
