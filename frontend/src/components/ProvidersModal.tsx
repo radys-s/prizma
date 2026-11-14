@@ -354,12 +354,12 @@ export function ProvidersModal({
               <div className="setting-text">
                 <p className="setting-label">Číst obsah stránek (deep research)</p>
                 <p className="setting-help">
-                  V režimu deep si Prizma nejlepší nalezené stránky stáhne celé přes službu{" "}
+                  V režimu deep si Refrakt nejlepší nalezené stránky stáhne celé přes službu{" "}
                   <a href="https://jina.ai/reader/" target="_blank" rel="noopener noreferrer">
                     Jina Reader
                   </a>{" "}
                   (<code>r.jina.ai</code>) místo toho, aby skládala odpověď z dvouvětných úryvků.
-                  Služba nepotřebuje klíč, ale vidí, které adresy Prizma čte. Vypnuté = deep
+                  Služba nepotřebuje klíč, ale vidí, které adresy Refrakt čte. Vypnuté = deep
                   režim se vrátí k úryvkům, nic jiného se nezmění.
                 </p>
               </div>

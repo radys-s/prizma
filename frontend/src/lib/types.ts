@@ -127,7 +127,7 @@ export interface Source {
   url: string;
   /** Only Exa and Linkup return one. Absent everywhere else — the UI falls
    *  back to a hostname monogram rather than asking a favicon CDN, which
-   *  would hand a third party the list of pages Prizma read. */
+   *  would hand a third party the list of pages Refrakt read. */
   favicon?: string;
 }
 

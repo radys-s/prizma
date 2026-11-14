@@ -28,7 +28,7 @@ _AUTO_DESCRIPTION = (
 # the effort tiers do: one list, so a mode cannot exist in the picker without
 # existing in `research.MODES`.
 _SEARCH_MODES = (
-    ("auto", "Auto", "Doporučeno. Prizma sáhne na web sama, když si otázka žádá aktuální fakta."),
+    ("auto", "Auto", "Doporučeno. Refrakt sáhne na web sám, když si otázka žádá aktuální fakta."),
     ("web", "Web", "Vždycky nejdřív vyhledá na webu a odpověď doplní zdroji."),
     (
         "deep",
@@ -48,7 +48,7 @@ def _keyless_only_hint() -> str:
     """
     sources = "ve Wikipedii a na arXivu" if websearch.wikipedia_available() else "na arXivu"
     return (
-        f"Zatím není připojený žádný vyhledávací klíč, takže Prizma hledá jen "
+        f"Zatím není připojený žádný vyhledávací klíč, takže Refrakt hledá jen "
         f"{sources}. Na pojmy a odbornou literaturu to stačí, na aktuální dění "
         "ne — přidej klíč (Jina, Exa, Tavily…) v „API klíče“."
     )

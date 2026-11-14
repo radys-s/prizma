@@ -1,4 +1,4 @@
-// aplikace.exe — double-click and Prizma is running.
+// aplikace.exe — double-click and Refrakt is running.
 //
 // WHY C#, AND WHY THIS SHAPE
 //
@@ -45,8 +45,8 @@ internal static class Launcher
             // diacritics suffer. Never fail the launch over an encoding.
         }
 
-        Console.Title = "Prizma";
-        Say("Prizma");
+        Console.Title = "Refrakt";
+        Say("Refrakt");
         Say("");
 
         try
@@ -101,7 +101,7 @@ internal static class Launcher
         int running = FindRunningInstance();
         if (running != 0)
         {
-            Say("Prizma už běží. Otevírám ji.");
+            Say("Refrakt už běží. Otevírám ho.");
             OpenBrowser(running);
             return 0;
         }
@@ -346,11 +346,11 @@ internal static class Launcher
         }
     }
 
-    /// <summary>Port of an instance already serving Prizma, or 0.</summary>
+    /// <summary>Port of an instance already serving Refrakt, or 0.</summary>
     private static int FindRunningInstance()
     {
         // Read the port a previous launch wrote down, rather than scanning the
-        // whole range and asking each port whether it is Prizma. The scan cost
+        // whole range and asking each port whether it is Refrakt. The scan cost
         // twenty seconds of a black window here — every closed port is dropped
         // rather than refused, so each probe ran to its timeout — and the
         // question could not be answered anyway, because HTTP from this binary

@@ -41,11 +41,11 @@ $ErrorActionPreference = 'Stop'
 #     startu je špatný obchod za každých okolností.
 #   OneDrive - na téhle mašině je v OneDrivu celá plocha včetně projektů.
 #     Vypnutý OneDrive neznamená pomalejší synchronizaci, ale žádnou.
-#   Prizma/Claude - to je celý smysl téhle úpravy.
+#   Refrakt/Claude - to je celý smysl téhle úpravy.
 $Keep = @(
   'Norton*', 'SecurityHealth*', 'AVGUI*', 'Windows Security*', 'SecurityHealthSystray*',
   'OneDrive*',
-  'Prizma*', 'Claude*'
+  'Refrakt*', 'Prizma*', 'Claude*'
 )
 
 function Test-Keep([string]$name) {

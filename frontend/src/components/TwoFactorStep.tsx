@@ -135,7 +135,7 @@ export function TwoFactorStep({ challenge, onVerified, onBack }: Props) {
         <h2>{isApp ? "Kód z aplikace" : "Kód z e-mailu"}</h2>
         <p>
           {isApp
-            ? "Otevři svoji ověřovací aplikaci a opiš šestimístný kód pro Prizmu."
+            ? "Otevři svoji ověřovací aplikaci a opiš šestimístný kód pro Refrakt."
             : `Poslal jsem šestimístný kód na ${challenge.email}. Platí deset minut.`}
         </p>
       </header>

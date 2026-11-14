@@ -169,7 +169,7 @@ export function LocalModelSection({ onChanged }: { onChanged: () => Promise<void
           <div className="setting-text">
             <p className="setting-label">Adresa endpointu</p>
             <p className="setting-help">
-              Prizma umí mluvit s čímkoli, co má OpenAI-kompatibilní API — <strong>Ollama</strong>,{" "}
+              Refrakt umí mluvit s čímkoli, co má OpenAI-kompatibilní API — <strong>Ollama</strong>,{" "}
               <strong>LM Studio</strong>, <strong>llama.cpp server</strong> nebo vLLM. Model si
               spusť v jednom z nich; holý PyTorch skript zavolat nejde, musel by nejdřív dostat
               stejné <code>/v1/chat/completions</code>. Konverzace pak neopustí počítač a nestojí

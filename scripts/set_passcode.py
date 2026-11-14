@@ -65,7 +65,7 @@ def apply(passcode: str) -> str:
 
 def main() -> int:
     init_db()
-    print("Přístupový kód do Prizmy.")
+    print("Přístupový kód do Refraktu.")
     print(f"Minimálně {core.MIN_PASSCODE_LEN} znaky. Zapomenutý kód nejde obnovit — jde jen přepsat tímhle skriptem.\n")
 
     passcode = read_passcode()

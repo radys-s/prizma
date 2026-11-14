@@ -1,7 +1,7 @@
 import { useId } from "react";
 
 /**
- * Prizma mark: jeden paprsek projde hranolem a **zlomí se**.
+ * Refrakt mark: jeden paprsek projde hranolem a **zlomí se**.
  *
  * Dvě předchozí verze kreslily trojúhelník a k němu duhový vějíř vpravo. To je
  * ale doslova obal Dark Side of the Moon — čím líp se to povedlo, tím víc to
@@ -23,7 +23,7 @@ const PRISM = "M20 6.6 L33.4 30.4 H6.6 Z";
    téměř rovnoběžně s pravou hranou, takže z lomu zbyl škrábanec přes roh. */
 const BEAM = "M2.4 24 H18 L37 11";
 
-export function PrizmaMark({ size = 32, className }: { size?: number; className?: string }) {
+export function RefraktMark({ size = 32, className }: { size?: number; className?: string }) {
   // Id gradientu musí být unikátní na instanci, jinak druhá kopie na stránce
   // tiše použije výplň té první.
   const uid = useId().replace(/:/g, "");
@@ -36,7 +36,7 @@ export function PrizmaMark({ size = 32, className }: { size?: number; className?
       fill="none"
       className={className}
       role="img"
-      aria-label="Prizma"
+      aria-label="Refrakt"
     >
       <defs>
         {/* Zdola zleva nahoru doprava: úhlopříčka sedí na tvar trojúhelníku,
@@ -101,13 +101,13 @@ export function PrizmaMark({ size = 32, className }: { size?: number; className?
  * Dlaždice je záměrně neutrální s jemným leskem: pod plnou oranžovou by
  * spektrální rám zanikl, a rám je na tom znaku to jediné, co nese barvu.
  */
-export function PrizmaTile({ size = 40, className }: { size?: number; className?: string }) {
+export function RefraktTile({ size = 40, className }: { size?: number; className?: string }) {
   return (
     <span
-      className={`prizma-tile${className ? ` ${className}` : ""}`}
+      className={`refrakt-tile${className ? ` ${className}` : ""}`}
       style={{ width: size, height: size, borderRadius: Math.round(size * 0.3) }}
     >
-      <PrizmaMark size={Math.round(size * 0.7)} />
+      <RefraktMark size={Math.round(size * 0.7)} />
     </span>
   );
 }

@@ -34,7 +34,7 @@ def secret() -> str:
     return base64.b32encode(secrets.token_bytes(SECRET_BYTES)).decode("ascii").rstrip("=")
 
 
-def uri(shared_secret: str, account: str, issuer: str = "Prizma") -> str:
+def uri(shared_secret: str, account: str, issuer: str = "Refrakt") -> str:
     """The `otpauth://` URI behind every setup QR code.
 
     Returned as text rather than an image: a QR encoder would be a dependency

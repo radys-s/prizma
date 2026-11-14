@@ -1,6 +1,6 @@
 """Native search APIs — the half of the search stage that is not an LLM.
 
-Prizma's first two searchers were language models that happen to have a web
+Refrakt's first two searchers were language models that happen to have a web
 tool (Groq Compound, Gemini grounding). They work, but they are metered the way
 *models* are metered: tokens per minute. Measured on 2026-08-29, one Compound
 search costs ~4 000 tokens against Groq's free 8 000 TPM ceiling, so a single
@@ -61,7 +61,7 @@ _DIGEST_CHARS = 2500
 # Wikimedia endpoint and the same string plus a URL gets a 200. That URL is the
 # app owner's public identity, so it is configuration (`settings.contact_url`),
 # never a guess — see `wikipedia_available()`.
-_UA = "Prizma/1.0 (local BYOK chat router; single-user)"
+_UA = "Refrakt/1.0 (local BYOK chat router; single-user)"
 
 # --- page reading ---------------------------------------------------------
 #
@@ -70,7 +70,7 @@ _UA = "Prizma/1.0 (local BYOK chat router; single-user)"
 # and deep research that has actually read the pages — which is exactly the
 # complaint about free Perplexity.
 #
-# It is also a third-party service that sees which URLs Prizma fetches, so it
+# It is also a third-party service that sees which URLs Refrakt fetches, so it
 # is a *disclosed, switchable* dependency (see `app/settings_store.py`),
 # never a silent one. Off means deep research falls back to snippets.
 _READER = "https://r.jina.ai/"
@@ -388,7 +388,7 @@ def wikipedia_available() -> bool:
 
 def _keyless_ua() -> str:
     contact = settings.contact_url.strip()
-    return f"Prizma/1.0 ({contact}; local BYOK chat router)" if contact else _UA
+    return f"Refrakt/1.0 ({contact}; local BYOK chat router)" if contact else _UA
 
 
 def _untag(html: str) -> str:

@@ -1,4 +1,4 @@
-# Prizma — one image, one origin, one process.
+# Refrakt — one image, one origin, one process.
 #
 # The frontend is built here and copied into the Python image rather than
 # deployed separately. That is not a packaging preference: the SPA calls
@@ -48,10 +48,10 @@ COPY --from=web /web/dist /app/frontend/dist
 # on Render it holds nothing that survives a restart (the real database is
 # Postgres), but the directory has to exist and be writable or the process
 # will not start.
-RUN useradd --create-home --uid 10001 prizma \
+RUN useradd --create-home --uid 10001 refrakt \
     && mkdir -p /app/backend/data \
-    && chown -R prizma:prizma /app
-USER prizma
+    && chown -R refrakt:refrakt /app
+USER refrakt
 
 WORKDIR /app/backend
 

@@ -70,7 +70,7 @@ _docs = {} if not settings.public_mode else {
     "openapi_url": None,
 }
 
-app = FastAPI(title="Prizma BYOK Router", lifespan=lifespan, **_docs)
+app = FastAPI(title="Refrakt BYOK Router", lifespan=lifespan, **_docs)
 
 app.add_middleware(
     CORSMiddleware,

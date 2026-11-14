@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Prizma",
-  "short_name": "Prizma",
+  "name": "Refrakt",
+  "short_name": "Refrakt",
   "description": "Router mezi free-tier LLM providery. Jeden prompt, ten správný model.",
   "lang": "cs",
   "dir": "ltr",

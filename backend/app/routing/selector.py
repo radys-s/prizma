@@ -194,12 +194,12 @@ class NotEnoughProviders(RuntimeError):
 
     def __init__(self, have: int):
         super().__init__(
-            f"Máš připojený jen {have} klíč, ale Prizma potřebuje aspoň "
+            f"Máš připojený jen {have} klíč, ale Refrakt potřebuje aspoň "
             f"{MIN_CONFIGURED_SLOTS} — bez záložního providera nemá kam přepnout, "
             "když první selže. Otevři „API klíče“ a přidej ještě jeden."
             if have == 1
-            else f"Nemáš připojený žádný API klíč. Prizma potřebuje aspoň "
-            f"{MIN_CONFIGURED_SLOTS}, aby měla kam přepnout, když jeden provider "
+            else f"Nemáš připojený žádný API klíč. Refrakt potřebuje aspoň "
+            f"{MIN_CONFIGURED_SLOTS}, aby měl kam přepnout, když jeden provider "
             "selže. Otevři „API klíče“ v postranním panelu."
         )
         self.have = have

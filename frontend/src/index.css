@@ -169,7 +169,7 @@ textarea {
 /* Dlaždice se znakem — to, čemu se na telefonu říká ikona aplikace. Neutrální
    povrch s jemným leskem schválně: pod plnou oranžovou dlaždicí barevný vějíř
    zanikne, a vějíř je na tom znaku to jediné, co něco říká. */
-.prizma-tile {
+.refrakt-tile {
   display: inline-grid;
   place-items: center;
   flex-shrink: 0;

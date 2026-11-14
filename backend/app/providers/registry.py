@@ -240,7 +240,7 @@ REGISTRY: list[ProviderModel] = [
         capabilities=("search",),
         signup_url="https://www.firecrawl.dev/app/api-keys",
         key_prefix="fc-",
-        notes="1 000 kreditů měsíčně zdarma, bez karty. Prizma nescrapuje "
+        notes="1 000 kreditů měsíčně zdarma, bez karty. Refrakt nescrapuje "
         "stránky, jen hledá — jedno hledání je jeden kredit.",
         strength=2,
         planner_rank=99,

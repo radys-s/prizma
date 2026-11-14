@@ -1,6 +1,6 @@
-# Prizma na telefonu
+# Refrakt na telefonu
 
-Krátká odpověď: **funguje, a nepotřebuje k tomu druhou aplikaci.** Prizma je
+Krátká odpověď: **funguje, a nepotřebuje k tomu druhou aplikaci.** Refrakt je
 hotová PWA — telefon si ji nainstaluje z prohlížeče, dostane ikonu na ploše,
 otevře se bez adresního řádku a shell běží i offline.
 
@@ -38,7 +38,7 @@ _otevření_ appky, ne odpovídání.
 - **Push notifikace.** Nejsou a zatím nedávají smysl: odpověď přijde do pár
   sekund, zatímco okno je otevřené.
 - **Sdílení do appky** (Android share target). Přidalo by „poslat text do
-  Prizmy" ze systémového menu. Chce to `share_target` v manifestu a jednu
+  Refraktu" ze systémového menu. Chce to `share_target` v manifestu a jednu
   obsluhu — malá věc, ale bez deploye se nedá vyzkoušet.
 
 ---
@@ -83,7 +83,7 @@ teprve ukáže, že nejsou:
 
 ## LAN náhled: podívat se na to na telefonu ještě dnes
 
-`lan-preview.ps1` pustí Prizmu tak, aby na ni telefon ve stejné Wi-Fi dosáhl.
+`lan-preview.ps1` pustí Refrakt tak, aby na něj telefon ve stejné Wi-Fi dosáhl.
 Je to **náhled, ne instalace** — uvidíš layout, písma, dotyková cíle a
 klávesnici. Neuvidíš instalaci na plochu ani offline režim, protože to je ta
 HTTPS podmínka výš.

@@ -361,8 +361,8 @@ def _mail_body(code: str, purpose: str) -> tuple[str, str]:
     what = "Potvrzení e-mailu" if purpose == challenges.PURPOSE_VERIFY else "Přihlášení"
     minutes = int(challenges.TTL.total_seconds() // 60)
     return (
-        f"Prizma — {what.lower()}: {code}",
-        f"{what} do Prizmy.\n\nTvůj kód: {code}\n\n"
+        f"Refrakt — {what.lower()}: {code}",
+        f"{what} do Refraktu.\n\nTvůj kód: {code}\n\n"
         f"Platí {minutes} minut a jde použít jednou. "
         "Pokud ses nepřihlašoval ty, nic nedělej — bez kódu se nikdo nedostane dovnitř.",
     )
@@ -642,7 +642,7 @@ def totp_setup(request: Request, session: Session = Depends(get_session)):
     user.totp_confirmed = False
     session.add(user)
     session.commit()
-    account = user.email or "Prizma"
+    account = user.email or "Refrakt"
     return {"secret": secret, "uri": totp.uri(secret, account), "digits": totp.DIGITS}
 
 

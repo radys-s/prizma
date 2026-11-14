@@ -1,4 +1,8 @@
-# Prizma — BYOK router nad free LLM API
+# Refrakt — BYOK router nad free LLM API
+
+> Formerly **Prizma**. A few identifiers keep the old name so existing installs keep working:
+> the `Prizma AutoStart` task, the `Prizma LAN preview` firewall rule, `%LOCALAPPDATA%\Prizma`,
+> the `PRIZMA_KEY_*` variables, browser storage keys (`prizma.*`) and the Render service.
 
 Lokální single-user chat appka (rozhraní jako Claude/ChatGPT), která rozloží
 každý dotaz podle typu a pošle ho na nejlepší dostupný **free** model podle
@@ -191,7 +195,7 @@ udělat jenom jednou, není build. Cenou je **C# 5**: žádná interpolace řet�
 
 ### Po přihlášení do Windows
 
-Prizma umí běžet pořád, ne jen když se na ni klikne. Dvě naplánované úlohy pro
+Refrakt umí běžet pořád, ne jen když se na něj klikne. Dvě naplánované úlohy pro
 přihlášeného uživatele — bez práv správce, bez služby:
 
 ```bash
@@ -243,7 +247,7 @@ se uloží záloha do `%LOCALAPPDATA%\Prizma\startup-backup.json` a
   špatný obchod za každých okolností;
 - **OneDrive** — na tomhle stroji je v OneDrivu celá plocha včetně
   `Projekty\`. Vypnutý OneDrive neznamená pomalejší synchronizaci, ale žádnou;
-- **Prizma a Claude**.
+- **Refrakt a Claude**.
 
 **Služeb se skript nedotýká.** Antivirus, ovladače a systémové věci běží jako
 služby, ne jako startup položky, a vypínat je kvůli startu je přesně ta
@@ -667,14 +671,14 @@ poznámku, že zbytek se nedohledal.
 ### Čtení stránek (jen deep režim)
 
 Free Perplexity skladá odpověď z dvouvětných úryvků a právě to je na něm
-špatně. V deep režimu si proto Prizma tři nejlepší nalezené stránky stáhne
+špatně. V deep režimu si proto Refrakt tři nejlepší nalezené stránky stáhne
 celé přes **[Jina Reader](https://jina.ai/reader/)** (`https://r.jina.ai/<url>`),
 který vrátí čistý markdown. Text se přilepí k digestu pod hlavičku toho
 samého `[n]` zdroje, takže číslování citací zůstává nedotčené. Přidá to zhruba
 10–15 s, proto má deep rozpočet 120 s místo 90.
 
 > **Third-party disclosure.** Jina Reader nepotřebuje klíč, ale **vidí, které
-> adresy Prizma čte**. Proto je to viditelný přepínač, ne skrytá závislost:
+> adresy Refrakt čte**. Proto je to viditelný přepínač, ne skrytá závislost:
 > *API klíče → Web a rešerše → Číst obsah stránek*. Výchozí je zapnuto,
 > vypnuté znamená, že se deep režim vrátí k úryvkům — nic jiného se nezmění.
 > Volba se ukládá na serveru (`app/settings_store.py`), ne v prohlížeči: rozhoduje

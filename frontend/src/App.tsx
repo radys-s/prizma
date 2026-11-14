@@ -4,7 +4,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { CompactDivider } from "./components/CompactDivider";
 import { Composer, type ComposerHandle } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
-import { PrizmaMark } from "./components/Logo";
+import { RefraktMark } from "./components/Logo";
 import { LimitToasts, type LimitNoticeItem } from "./components/LimitToast";
 import { LoginScreen } from "./components/LoginScreen";
 import { Message } from "./components/Message";
@@ -172,14 +172,14 @@ function AppShell() {
   if (offline || auth === null) {
     return (
       <div className="auth-boot">
-        <PrizmaMark size={40} />
+        <RefraktMark size={40} />
         {/* Two very different situations, one screen. Installed on a phone the
             cause is almost always the network; on Tomáš's desktop it is almost
             always that uvicorn is not running. Naming both beats naming the
             wrong one. */}
         <span>
           {navigator.onLine
-            ? "Server neodpovídá. Pokud běží Prizma lokálně, zkontroluj, že běží uvicorn na portu 8000."
+            ? "Server neodpovídá. Pokud běží Refrakt lokálně, zkontroluj, že běží uvicorn na portu 8000."
             : "Jsi offline. Aplikace se načetla z paměti telefonu, ale odpovídat bez připojení neumí."}
         </span>
         <button type="button" className="btn btn-primary" onClick={refreshAuth}>
@@ -454,11 +454,11 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
   const currentTitle = current?.title ?? "Nová konverzace";
 
   // Several tabs open on several threads is the normal way to use this, and
-  // "Prizma" three times over tells you nothing about which is which.
+  // "Refrakt" three times over tells you nothing about which is which.
   useEffect(() => {
-    document.title = currentId === null ? "Prizma" : `${currentTitle} · Prizma`;
+    document.title = currentId === null ? "Refrakt" : `${currentTitle} · Refrakt`;
     return () => {
-      document.title = "Prizma";
+      document.title = "Refrakt";
     };
   }, [currentId, currentTitle]);
 
@@ -1181,8 +1181,8 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
             <TriangleAlert size={15} />
             <p>
               {keySlots.configured === 0
-                ? `Zatím nemáš uložený žádný API klíč. Prizma potřebuje aspoň ${minSlots}, aby měla kam přepnout, když jeden provider selže.`
-                : `Máš připojený jen jeden klíč. Prizma potřebuje aspoň ${minSlots} — bez záložního providera nemá kam přepnout, když první selže.`}
+                ? `Zatím nemáš uložený žádný API klíč. Refrakt potřebuje aspoň ${minSlots}, aby měl kam přepnout, když jeden provider selže.`
+                : `Máš připojený jen jeden klíč. Refrakt potřebuje aspoň ${minSlots} — bez záložního providera nemá kam přepnout, když první selže.`}
             </p>
             <button type="button" className="btn btn-primary" onClick={() => setSettingsOpen(true)}>
               <KeyRound size={14} />

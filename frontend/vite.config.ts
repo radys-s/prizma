@@ -76,7 +76,7 @@ function inlineScriptHashes(html: string): string[] {
 function cspPlugin(): Plugin {
   let isDev = false;
   return {
-    name: "prizma-csp",
+    name: "refrakt-csp",
     configResolved: (config) => {
       isDev = config.command === "serve";
     },
@@ -108,7 +108,7 @@ function cspPlugin(): Plugin {
 function swVersionPlugin(): Plugin {
   const buildId = Date.now().toString(36);
   return {
-    name: "prizma-sw-version",
+    name: "refrakt-sw-version",
     generateBundle(_options, bundle) {
       void bundle;
       this.emitFile({

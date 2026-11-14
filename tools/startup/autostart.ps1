@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  Prizma a Claude po přihlášení do Windows.
+  Refrakt a Claude po přihlášení do Windows.
 
 .DESCRIPTION
   Založí dvě naplánované úlohy pro přihlášeného uživatele:
@@ -18,7 +18,7 @@
   po přihlášení (aby se appka neprala se startem Windows o disk), restart po
   pádu a běh bez viditelného okna. Zástupce neumí nic z toho.
 
-  Prizma se **nespouští přes aplikace.exe**. Ten drží server v job objectu,
+  Refrakt se **nespouští přes aplikace.exe**. Ten drží server v job objectu,
   který ho zabije při zavření okna — to je při klikacím spuštění správně,
   ale u služby na pozadí je to přesně to, co nechceme.
 
@@ -45,12 +45,14 @@ if ($Remove) {
       Write-Output "neexistuje:  $t"
     }
   }
-  $lnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Prizma.lnk'
-  if (Test-Path $lnk) { Remove-Item $lnk; Write-Output "odstraněno: zástupce Prizma.lnk" }
+  foreach ($name in 'Refrakt.lnk', 'Prizma.lnk') {
+    $lnk = Join-Path ([Environment]::GetFolderPath('Desktop')) $name
+    if (Test-Path $lnk) { Remove-Item $lnk; Write-Output "odstraněno: zástupce $name" }
+  }
   return
 }
 
-# ---------------------------------------------------------------- Prizma
+# ---------------------------------------------------------------- Refrakt
 
 $repo    = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $backend = Join-Path $repo 'backend'
@@ -88,7 +90,7 @@ $settings = New-ScheduledTaskSettingsSet `
   -MultipleInstances IgnoreNew
 
 Register-ScheduledTask -TaskName $PrizmaTask -Action $action -Trigger $trigger `
-  -Settings $settings -Description 'Prizma - lokální server na http://127.0.0.1:8000' `
+  -Settings $settings -Description 'Refrakt - lokální server na http://127.0.0.1:8000' `
   -Force | Out-Null
 Write-Output "založeno: $PrizmaTask (127.0.0.1:$Port, okno se otevře samo)"
 
@@ -100,7 +102,7 @@ if (-not $claude) {
 } else {
   $cAction  = New-ScheduledTaskAction -Execute 'explorer.exe' -Argument "shell:AppsFolder\$($claude.AppID)"
   $cTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-  $cTrigger.Delay = 'PT45S'   # až po Prizmě, ať se nervou o disk
+  $cTrigger.Delay = 'PT45S'   # až po Refraktu, ať se nervou o disk
   $cSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -StartWhenAvailable -Hidden -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew
 
@@ -120,14 +122,17 @@ $edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
 if (-not (Test-Path $edge)) { $edge = "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe" }
 if (Test-Path $edge) {
   $shell = New-Object -ComObject WScript.Shell
-  $lnk = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'Prizma.lnk'))
+  # The app was called Prizma; its old shortcut goes so only one is left.
+  $old = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Prizma.lnk'
+  if (Test-Path $old) { Remove-Item $old }
+  $lnk = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'Refrakt.lnk'))
   $lnk.TargetPath = $edge
   $lnk.Arguments  = "--app=http://127.0.0.1:$Port"
   $icon = Join-Path $PSScriptRoot 'prizma.ico'
   if (Test-Path $icon) { $lnk.IconLocation = $icon }
-  $lnk.Description = 'Prizma'
+  $lnk.Description = 'Refrakt'
   $lnk.Save()
-  Write-Output "založeno: zástupce Prizma.lnk na ploše"
+  Write-Output "založeno: zástupce Refrakt.lnk na ploše"
 } else {
   Write-Warning "Edge nenalezen - zástupce se nezaložil. Appka je na http://127.0.0.1:$Port"
 }

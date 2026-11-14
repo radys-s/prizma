@@ -110,14 +110,14 @@ class Settings(BaseSettings):
     # `onboarding@resend.dev` and *only* to the address the account was created
     # with — which is exactly the one recipient this app has.
     resend_api_key: str = ""
-    mail_from: str = "Prizma <onboarding@resend.dev>"
+    mail_from: str = "Refrakt <onboarding@resend.dev>"
 
     # ---------------------------------------------------------------- contact
 
     # Contact URI put in the User-Agent of the keyless Wikipedia searcher.
     #
     # Wikimedia's API etiquette *requires* one: measured 2026-08-31, an
-    # otherwise perfectly descriptive `Prizma/1.0 (local BYOK chat router;
+    # otherwise perfectly descriptive `Refrakt/1.0 (local BYOK chat router;
     # single-user)` gets a flat 403 from every Wikimedia endpoint, and adding a
     # URL to it gets a 200. So this is not a nicety — without it the Wikipedia
     # leg cannot run at all.

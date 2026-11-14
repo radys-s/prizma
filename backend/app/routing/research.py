@@ -516,7 +516,7 @@ def read_targets(findings: Findings) -> list[str]:
 async def _enrich(findings: Findings) -> Findings:
     """Deep mode only: fetches the top sources in full and folds them in.
 
-    This is the step that separates Prizma's deep research from a snippet
+    This is the step that separates Refrakt's deep research from a snippet
     summariser. A search API returns two sentences per hit; the executor
     writing an answer from six of those is doing the same job as the free tool
     the user was unhappy with. Reading the pages gives it the actual text.

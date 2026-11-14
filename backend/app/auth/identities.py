@@ -1,6 +1,6 @@
 """Who owns the account, and which ways in belong to them.
 
-Prizma is single-user by design, and that design survives round 4 unchanged:
+Refrakt is single-user by design, and that design survives round 4 unchanged:
 there is exactly one `AppUser` row, and `core.get_user()` still returns it.
 What changes is that the one account can be reached several ways — the access
 code, Google, GitHub, an email address — each an `AuthIdentity` row.
