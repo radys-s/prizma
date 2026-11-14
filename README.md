@@ -454,6 +454,12 @@ curl http://127.0.0.1:8000/v1/chat/completions -H "Authorization: Bearer $GATEWA
   machine, like the rest of the API.
 - Errors keep the provider's status and `Retry-After`, never the provider's raw message.
 
+On a Windows PC, `tools\startup\gateway-token.ps1` sets the token for Refrakt and for Studio
+(user variable `REFRAKT_GATEWAY_TOKEN`). On a hub, `tools/hub/setup.sh` installs a
+`refrakt.service` on `127.0.0.1:8000`: send it `backend/.env` and `backend/data/app.db` with
+Taildrop and it puts them in place without displaying them. Run it from a checkout that only
+serves, not one you develop in.
+
 ## Bezpečnost
 
 API klíč se ukládá **zašifrovaný AES-256-GCM** do databáze. Šifruje se
