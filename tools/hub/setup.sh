@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Run Refrakt on a hub as a systemd --user service, with the keys from Tomáš's notebook.
 #
-# On the notebook, send two files to this hub with Tailscale (right-click → "Send with
-# Tailscale"): backend/.env and backend/data/app.db. Then run this script. It moves them into
-# place without displaying them, adds a gateway token for Studio and the hub agents, and starts
-# the service on 127.0.0.1:8000. Safe to run again.
+# On the notebook, send the database and its key to this hub with Tailscale:
+#   tailscale file cp backend\data\app.db backend\data\master.key <hub>:
+# (send backend\.env as well, or instead of master.key, if SECRET_KEY is set there). Then run
+# this script. It moves them into place without displaying them, adds a gateway token for
+# Studio and the hub agents, and starts the service on 127.0.0.1:8000. Safe to run again.
 set -euo pipefail
 
 backend="$(cd "$(dirname "$0")/../../backend" && pwd)"
 env_file="$backend/.env"
+data="$backend/data"
 token_file="$HOME/.config/refrakt/gateway.env"
 
 if [[ ! -x "$backend/.venv/bin/uvicorn" ]]; then
@@ -16,18 +18,23 @@ if [[ ! -x "$backend/.venv/bin/uvicorn" ]]; then
   (cd "$backend" && uv venv -q && uv pip install -q -e . -c requirements.lock)
 fi
 
-if [[ ! -f "$env_file" ]]; then
+if [[ ! -f "$data/app.db" ]]; then
   inbox="$(mktemp -d)"
-  echo "Waiting for .env and app.db from Taildrop..."
-  until [[ -n "$(ls -A "$inbox")" ]] && ls "$inbox" | grep -q 'env' && ls "$inbox" | grep -q 'app.db'; do
+  echo "Waiting for app.db and master.key (or .env) from Taildrop..."
+  until [[ -f "$inbox/app.db" ]] && { [[ -f "$inbox/master.key" ]] || [[ -f "$inbox/.env" ]]; }; do
     tailscale file get --wait=true "$inbox" >/dev/null
   done
-  install -m 600 "$(ls -d "$inbox"/* | grep 'env' | head -1)" "$env_file"
-  mkdir -p "$backend/data"
-  install -m 600 "$inbox/app.db" "$backend/data/app.db"
+  mkdir -p "$data"
+  install -m 600 "$inbox/app.db" "$data/app.db"
+  # The key that decrypts the database: a file next to it (the default on a PC), or
+  # SECRET_KEY in .env when one was set up.
+  if [[ -f "$inbox/master.key" ]]; then install -m 600 "$inbox/master.key" "$data/master.key"; fi
+  if [[ -f "$inbox/.env" ]]; then install -m 600 "$inbox/.env" "$env_file"; fi
   rm -rf "$inbox"
   echo "Keys installed (not displayed)."
 fi
+touch "$env_file"
+chmod 600 "$env_file"
 
 if ! grep -q '^GATEWAY_TOKEN=.' "$env_file"; then
   printf '\nGATEWAY_TOKEN=%s\n' "$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" >> "$env_file"
@@ -50,7 +57,7 @@ After=network-online.target
 [Service]
 WorkingDirectory=$backend
 # A notebook .env may point at Windows paths or the LAN preview; these win over it.
-Environment=DB_PATH=$backend/data/app.db
+Environment=DB_PATH=$data/app.db
 Environment=PUBLIC_MODE=false
 Environment=LAN_PREVIEW=false
 ExecStart=$backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
