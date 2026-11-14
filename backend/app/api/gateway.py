@@ -17,12 +17,14 @@ API (`auth/guard.py`, layer 1).
 """
 
 import hmac
+import json
 import time
 import uuid
+from collections.abc import AsyncIterator
 
 import litellm
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
 from app.auth.guard import LOOPBACK_HOSTS
@@ -97,10 +99,33 @@ def _error(status: int, message: str, retry_after: float | None = None) -> JSONR
     )
 
 
+def _failure_message(provider: ProviderModel, exc: BaseException) -> str:
+    # The class name only: a provider's own message can echo part of the key.
+    return f"{provider.id}: {type(exc).__name__}"
+
+
+async def _sse(provider: ProviderModel, slug: str, first, rest) -> AsyncIterator[str]:
+    """OpenAI's stream format: one `data:` line per chunk, then `[DONE]`.
+
+    A provider that breaks mid-answer cannot become an HTTP status any more, so
+    the stream ends with an error event instead of `[DONE]`."""
+    try:
+        chunk = first
+        while chunk is not None:
+            data = chunk.model_dump()
+            data["model"] = slug
+            yield f"data: {json.dumps(data)}\n\n"
+            chunk = await anext(rest, None)
+    except Exception as exc:  # noqa: BLE001 - reported to the caller as an event
+        failures.record(exc, provider_id=provider.id, model=slug)
+        error = {"message": _failure_message(provider, exc), "type": "gateway_error"}
+        yield f"data: {json.dumps({'error': error})}\n\n"
+        return
+    yield "data: [DONE]\n\n"
+
+
 @router.post("/chat/completions")
 async def chat_completions(body: ChatRequest):
-    if body.stream:
-        return _error(400, "Streaming is not supported; send stream=false")
     targets = _targets(body.model)
     if not targets:
         return _error(404, f"Model {body.model!r} is not configured here")
@@ -112,6 +137,8 @@ async def chat_completions(body: ChatRequest):
     for name in ("max_tokens", "temperature"):
         if getattr(body, name) is not None:
             extra[name] = getattr(body, name)
+    if body.stream:
+        extra["stream"] = True
 
     failure: tuple[ProviderModel, BaseException] | None = None
     for provider, slug in targets:
@@ -119,10 +146,17 @@ async def chat_completions(body: ChatRequest):
             response = await litellm.acompletion(
                 model=slug, **keystore.endpoint(provider), messages=body.messages, **extra
             )
+            if body.stream:
+                # Wait for the first chunk here: until something has been sent,
+                # a failure can still fall back or be a plain HTTP status.
+                rest = aiter(response)
+                first = await anext(rest, None)
         except Exception as exc:  # noqa: BLE001 - every provider error is reported, none raised
             failures.record(exc, provider_id=provider.id, model=slug)
             failure = (provider, exc)
             continue
+        if body.stream:
+            return StreamingResponse(_sse(provider, slug, first, rest), media_type="text/event-stream")
         data = response.model_dump()
         data.setdefault("id", f"chatcmpl-{uuid.uuid4().hex}")
         data.setdefault("created", int(time.time()))
@@ -135,9 +169,4 @@ async def chat_completions(body: ChatRequest):
     status = getattr(exc, "status_code", None)
     if not isinstance(status, int) or not 400 <= status < 600:
         status = 502
-    # The class name only: a provider's own message can echo part of the key.
-    return _error(
-        status,
-        f"{provider.id}: {type(exc).__name__}",
-        failures.retry_after_seconds(exc),
-    )
+    return _error(status, _failure_message(provider, exc), failures.retry_after_seconds(exc))

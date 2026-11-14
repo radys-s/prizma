@@ -123,8 +123,101 @@ def test_auto_falls_back_to_the_next_provider(client, gateway, monkeypatch):
     assert r.json()["provider"] == "cerebras"
 
 
-def test_unknown_model_and_streaming_are_refused(client, gateway):
+def test_unknown_model_is_refused(client, gateway):
     msg = [{"role": "user", "content": "hi"}]
     assert client.post("/v1/chat/completions", headers=AUTH, json={"model": "x/y", "messages": msg}).status_code == 404
-    r = client.post("/v1/chat/completions", headers=AUTH, json={"model": GROQ, "messages": msg, "stream": True})
-    assert r.status_code == 400
+
+
+# ------------------------------------------------------------- streaming
+
+
+class _Chunk:
+    def __init__(self, text: str | None, finish: str | None = None) -> None:
+        self.text, self.finish = text, finish
+
+    def model_dump(self) -> dict:
+        return {
+            "id": "chatcmpl-x",
+            "object": "chat.completion.chunk",
+            "choices": [{"index": 0, "delta": {"content": self.text}, "finish_reason": self.finish}],
+        }
+
+
+def _fake_stream(monkeypatch, calls, fail_on=(), break_after_first=False):
+    async def acompletion(**kwargs):
+        calls.append(kwargs)
+        if kwargs["model"].split("/")[0] in fail_on:
+            raise litellm.RateLimitError(
+                message="Rate limit reached. Please try again in 20s.",
+                llm_provider="groq",
+                model=kwargs["model"],
+            )
+
+        async def chunks():
+            yield _Chunk("Hel")
+            if break_after_first:
+                raise litellm.APIConnectionError(
+                    message="reset, key gsk-test", llm_provider="groq", model=kwargs["model"]
+                )
+            yield _Chunk("lo")
+            yield _Chunk(None, "stop")
+
+        return chunks()
+
+    monkeypatch.setattr("app.api.gateway.litellm.acompletion", acompletion)
+
+
+def _events(text: str) -> list[str]:
+    return [line[len("data: "):] for line in text.splitlines() if line.startswith("data: ")]
+
+
+def _stream(client, model):
+    return client.post(
+        "/v1/chat/completions",
+        headers=AUTH,
+        json={"model": model, "messages": [{"role": "user", "content": "hi"}], "stream": True},
+    )
+
+
+def test_streaming_sends_openai_chunks_and_done(client, gateway, monkeypatch):
+    import json
+
+    _fake_stream(monkeypatch, gateway)
+    r = _stream(client, GROQ)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    events = _events(r.text)
+    assert events[-1] == "[DONE]"
+    chunks = [json.loads(e) for e in events[:-1]]
+    assert "".join(c["choices"][0]["delta"]["content"] or "" for c in chunks) == "Hello"
+    assert all(c["model"] == GROQ for c in chunks)
+    assert gateway[0]["stream"] is True
+
+
+def test_streaming_failure_before_the_first_chunk_is_a_plain_error(client, gateway, monkeypatch):
+    _fake_stream(monkeypatch, gateway, fail_on={"groq"})
+    r = _stream(client, GROQ)
+    assert r.status_code == 429
+    assert r.headers["retry-after"] == "20"
+    assert len(gateway) == 1
+
+
+def test_streaming_auto_falls_back_before_the_first_chunk(client, gateway, monkeypatch):
+    _fake_stream(monkeypatch, gateway, fail_on={"groq"})
+    r = _stream(client, "auto")
+    assert r.status_code == 200
+    assert _events(r.text)[-1] == "[DONE]"
+    assert [c["model"].split("/")[0] for c in gateway] == ["groq", "cerebras"]
+
+
+def test_streaming_break_mid_answer_ends_with_an_error_event_without_the_key(client, gateway, monkeypatch):
+    import json
+
+    _fake_stream(monkeypatch, gateway, break_after_first=True)
+    r = _stream(client, GROQ)
+    assert r.status_code == 200
+    events = _events(r.text)
+    assert json.loads(events[0])["choices"][0]["delta"]["content"] == "Hel"
+    assert json.loads(events[-1])["error"]["message"] == "groq: APIConnectionError"
+    assert "[DONE]" not in events
+    assert "gsk-test" not in r.text
