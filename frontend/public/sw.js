@@ -1,5 +1,5 @@
 /**
- * Prizma's service worker. Hand-written on purpose — `vite-plugin-pwa` would
+ * Refrakt's service worker. Hand-written on purpose — `vite-plugin-pwa` would
  * pull in Workbox and precache-manifest generation to do rather less than this
  * file does, and the one rule that actually matters here is a rule about what
  * *not* to touch.
@@ -14,10 +14,10 @@
  * `/assets/*`), so it can be cached hard.
  */
 
-// Replaced at build time by the `prizma-sw-version` plugin in vite.config.ts.
+// Replaced at build time by the `refrakt-sw-version` plugin in vite.config.ts.
 // It has to change every deploy, otherwise the `activate` cleanup below never
 // evicts anything and a stale shell can outlive several releases.
-const VERSION = "prizma-__BUILD_ID__";
+const VERSION = "refrakt-__BUILD_ID__";
 const SHELL = `${VERSION}-shell`;
 
 // Enough to open the app offline: the document, the manifest and the icons.

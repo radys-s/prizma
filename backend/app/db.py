@@ -58,7 +58,7 @@ def _build_engine():
     makes Neon usable at all. Neon autosuspends its compute after five idle
     minutes; a connection held open across that suspend is dead, and without a
     pre-ping the first request after a quiet spell fails with a closed-socket
-    error instead of just reconnecting. Prizma is idle far more often than it
+    error instead of just reconnecting. Refrakt is idle far more often than it
     is busy, so this is the common path, not the edge case.
     """
     if settings.database_url:

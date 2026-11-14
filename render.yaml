@@ -84,7 +84,7 @@ services:
       - key: RESEND_API_KEY
         sync: false
       - key: MAIL_FROM
-        value: Prizma <onboarding@resend.dev>
+        value: Refrakt <onboarding@resend.dev>
 
       # ------------------------------------------------------------- contact
       # Wikimedia returns 403 to a User-Agent with no contact URL, so the

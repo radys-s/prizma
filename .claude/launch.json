@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "prizma-backend",
+      "name": "refrakt-backend",
       "runtimeExecutable": "C:\\Users\\tomas\\OneDrive\\Desktop\\Projekty\\Osobni\\multiagent\\backend\\.venv\\Scripts\\python.exe",
       "runtimeArgs": [
         "-m",
@@ -15,7 +15,7 @@
       "port": 8000
     },
     {
-      "name": "prizma",
+      "name": "refrakt",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",

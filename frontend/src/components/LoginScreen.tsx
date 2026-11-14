@@ -22,7 +22,7 @@ import {
 } from "../lib/api";
 import type { AuthState, OAuthProviderId, TwoFactorChallenge } from "../lib/types";
 import { AppleIcon, GitHubIcon, GoogleIcon, MicrosoftIcon } from "./BrandIcons";
-import { PrizmaMark } from "./Logo";
+import { RefraktMark } from "./Logo";
 import { TwoFactorStep } from "./TwoFactorStep";
 
 const SOCIAL: Array<{ id: OAuthProviderId; label: string; icon: React.ReactNode }> = [
@@ -72,7 +72,7 @@ function consumeOAuthError(): string {
     return "Tenhle účet k appce nepatří — přihlas se tím, kterým jsi ji zakládal.";
   }
   if (message === "neni_vlastnik") {
-    return "Tahle adresa nemá k Prizmě přístup. Přihlas se adresou vlastníka.";
+    return "Tahle adresa nemá k Refraktu přístup. Přihlas se adresou vlastníka.";
   }
   return message;
 }
@@ -131,12 +131,12 @@ export function LoginScreen({ state, onAuthenticated }: Props) {
       <div className="auth-card">
         <header className="auth-card-head">
           <span className="auth-card-mark">
-            <PrizmaMark size={30} />
+            <RefraktMark size={30} />
           </span>
-          <h2>{isSetup ? "Nastav si Prizmu" : "Vítej zpátky"}</h2>
+          <h2>{isSetup ? "Nastav si Refrakt" : "Vítej zpátky"}</h2>
           <p>
             {isSetup
-              ? "Založ si účet. Prizma je jednouživatelská — tenhle účet bude jediný."
+              ? "Založ si účet. Refrakt je jednouživatelský — tenhle účet bude jediný."
               : "Přihlas se a jsi uvnitř."}
           </p>
         </header>
@@ -561,7 +561,7 @@ function AuthStage({ children }: { children: React.ReactNode }) {
       <div className="auth-shell">
         <section className="auth-hero">
           <div className="auth-hero-mark">
-            <PrizmaMark size={56} />
+            <RefraktMark size={56} />
           </div>
           <h1 className="auth-hero-title">
             Jeden prompt.
@@ -569,7 +569,7 @@ function AuthStage({ children }: { children: React.ReactNode }) {
             <span className="auth-hero-accent">Ten správný model.</span>
           </h1>
           <p className="auth-hero-lede">
-            Prizma je tvůj vlastní router mezi free-tier modely. Klíče si drží u sebe, a když jeden
+            Refrakt je tvůj vlastní router mezi free-tier modely. Klíče si drží u sebe, a když jeden
             provider vypadne, ani si toho nevšimneš.
           </p>
           <ul className="auth-highlights">

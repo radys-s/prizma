@@ -1,5 +1,5 @@
 /**
- * Short things about Prizma that are not visible from the interface.
+ * Short things about Refrakt that are not visible from the interface.
  *
  * Every line here has to be *true of this build* and has to say what it costs,
  * not just what it does. "Max je nejlepší" is marketing; "Max přidá revizi a
@@ -28,7 +28,7 @@ export const TIPS: Tip[] = [
   },
   {
     topic: "router",
-    text: "Když jeden provider spadne nebo dojde na limit, Prizma sama zkusí dalšího v pořadí. Proto se vyplatí připojit víc klíčů, i když používáš pořád jeden.",
+    text: "Když jeden provider spadne nebo dojde na limit, Refrakt sám zkusí dalšího v pořadí. Proto se vyplatí připojit víc klíčů, i když používáš pořád jeden.",
   },
   {
     topic: "web",
@@ -36,11 +36,11 @@ export const TIPS: Tip[] = [
   },
   {
     topic: "web",
-    text: "Čísla v hranatých závorkách v odpovědi jsou odkazy na stránky, které Prizma opravdu četla. Klikni na ně, když ti něco nesedí.",
+    text: "Čísla v hranatých závorkách v odpovědi jsou odkazy na stránky, které Refrakt opravdu četl. Klikni na ně, když ti něco nesedí.",
   },
   {
     topic: "web",
-    text: "Bez vyhledávacího klíče hledá Prizma jen ve Wikipedii a na arXivu. Na pojmy to stačí, na to, co se stalo tenhle týden, ne.",
+    text: "Bez vyhledávacího klíče hledá Refrakt jen ve Wikipedii a na arXivu. Na pojmy to stačí, na to, co se stalo tenhle týden, ne.",
   },
   {
     topic: "keys",
@@ -68,7 +68,7 @@ export const TIPS: Tip[] = [
   },
   {
     topic: "ovládání",
-    text: "Dlouhou konverzaci Prizma sama zkrátí do shrnutí, aby se vešla do kontextu. Ve vlákně to pozná podle dělící čáry — nad ní se odpovídá už jen ze souhrnu.",
+    text: "Dlouhou konverzaci Refrakt sám zkrátí do shrnutí, aby se vešla do kontextu. Ve vlákně to pozná podle dělící čáry — nad ní se odpovídá už jen ze souhrnu.",
   },
   {
     topic: "soukromí",

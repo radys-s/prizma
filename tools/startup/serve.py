@@ -1,4 +1,4 @@
-"""Prizma na pozadí, bez okna a s logem.
+"""Refrakt na pozadí, bez okna a s logem.
 
 Naplánovaná úloha spouští `pythonw.exe`, protože `python.exe` by při každém
 přihlášení blikl konzolí. Jenže pythonw nemá stdout ani stderr — obojí je
@@ -82,7 +82,7 @@ def _edge() -> str | None:
 
 
 def _open_when_ready(port: int) -> None:
-    """Otevře okno Prizmy, jakmile server opravdu odpovídá.
+    """Otevře okno Refraktu, jakmile server opravdu odpovídá.
 
     Úloha ve Správci úloh umí spustit server, ale okno si musí někdo otevřít —
     bez toho po přihlášení běží appka, kterou není vidět. Zástupce na ploše to
@@ -174,7 +174,7 @@ def _trim_log_forever(stream, path: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prizma jako služba na pozadí")
+    parser = argparse.ArgumentParser(description="Refrakt jako služba na pozadí")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(

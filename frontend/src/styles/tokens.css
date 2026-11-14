@@ -75,7 +75,7 @@
   --info: light-dark(#2a63a4, #7ab3e0);
   --info-soft: light-dark(rgb(42 99 164 / 10%), rgb(122 179 224 / 12%));
 
-  /* The refracted fan in the Prizma mark. Reused by the login aurora, so the
+  /* The refracted fan in the Refrakt mark. Reused by the login aurora, so the
      brand and the sign-in screen are literally lit by the same spectrum.
      Deeper on light so the gradient headline stays readable on off-white. */
   --spectrum-1: light-dark(#d9992b, #f2c879);

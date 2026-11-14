@@ -18,7 +18,7 @@ import httpx
 
 from app.config import settings
 
-log = logging.getLogger("prizma.mail")
+log = logging.getLogger("refrakt.mail")
 
 API_URL = "https://api.resend.com/emails"
 TIMEOUT_SECONDS = 15.0

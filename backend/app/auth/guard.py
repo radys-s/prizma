@@ -45,7 +45,7 @@ def _is_own_origin(request: Request, origin: str) -> bool:
     """Whether `origin` is this very server, as the browser addressed it.
 
     The static allowlist cannot cover the case that matters most in practice:
-    `spa.py` mounts the built frontend into this same app, so when Prizma is
+    `spa.py` mounts the built frontend into this same app, so when Refrakt is
     started by `aplikace.exe` the page lives on `http://127.0.0.1:8000` — a
     port picked at run time from a free range. Nothing can write that down in
     advance, and without this check the first `POST /api/auth/login` from the

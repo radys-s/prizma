@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Pustí Prizmu tak, aby na ni dosáhl telefon ve stejné Wi-Fi.
+    Pustí Refrakt tak, aby na něj dosáhl telefon ve stejné Wi-Fi.
 
 .DESCRIPTION
     Náhled, ne instalace. Uvidíš layout, písma, dotykové cíle a jak se chová

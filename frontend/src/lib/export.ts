@@ -64,7 +64,7 @@ export function exportFilename(title: string): string {
     .trim()
     .replace(/\s+/g, "-")
     .slice(0, 60);
-  return `${base || "prizma-konverzace"}.md`;
+  return `${base || "refrakt-konverzace"}.md`;
 }
 
 /**

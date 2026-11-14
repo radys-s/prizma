@@ -19,7 +19,7 @@ import { searchMessages } from "../lib/api";
 import { dayBucket, normalize } from "../lib/date";
 import type { Theme } from "../lib/theme";
 import type { Conversation, MessageHit } from "../lib/types";
-import { PrizmaTile } from "./Logo";
+import { RefraktTile } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 
 const BUCKET_ORDER = ["Dnes", "Včera", "Posledních 7 dní", "Starší"];
@@ -278,8 +278,8 @@ export const Sidebar = memo(function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-inner">
         <div className="brand">
-          <PrizmaTile size={28} />
-          <span className="brand-text">Prizma</span>
+          <RefraktTile size={28} />
+          <span className="brand-text">Refrakt</span>
         </div>
 
         <button type="button" className="new-chat-btn" onClick={onNew}>

@@ -360,7 +360,7 @@ async def test_provider_key(provider_id: str, request: Request):
         # is nothing for litellm to call — see `ProviderModel.search_backend`.
         try:
             _, hits = await asyncio.wait_for(
-                websearch.search(provider.search_backend, api_key, "prizma test", limit=3),
+                websearch.search(provider.search_backend, api_key, "refrakt test", limit=3),
                 timeout=_TEST_TIMEOUT_SECONDS,
             )
         except Exception as exc:  # noqa: BLE001 - httpx raises its own family
