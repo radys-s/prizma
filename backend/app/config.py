@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     # always allowed. On Render: ["prizma.onrender.com"].
     allowed_hosts: list[str] = []
 
+    # Bearer token for the OpenAI-compatible `/v1` endpoint (`app/api/gateway.py`),
+    # which lets AI Bridge Studio and the hub agents use the keys stored here.
+    # Empty -> the endpoint does not exist. Never commit it.
+    gateway_token: str = ""
+
     # The app is single-user and the URL is public, so the first person to sign
     # in would otherwise own the account. When this is set, only that address
     # can create it. Compared case-insensitively.
