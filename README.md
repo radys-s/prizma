@@ -441,8 +441,8 @@ sítě.
 
 ## Gateway for other tools (`/v1`)
 
-AI Bridge Studio and the agents on the hub can use the keys stored here without holding
-them. Set `GATEWAY_TOKEN` in `backend/.env` and the backend answers OpenAI-compatible calls:
+[AI Bridge Studio](https://github.com/radys-s/aibridge-studio) and the agents on the hub can use
+the keys stored here without holding them. Set `GATEWAY_TOKEN` in `backend/.env` and the backend answers OpenAI-compatible calls:
 
 ```bash
 curl http://127.0.0.1:8000/v1/models -H "Authorization: Bearer $GATEWAY_TOKEN"
