@@ -462,7 +462,8 @@ On a Windows PC, `tools\startup\gateway-token.ps1` sets the token for Refrakt an
 (user variable `REFRAKT_GATEWAY_TOKEN`). On a hub, `tools/hub/setup.sh` installs a
 `refrakt.service` on `127.0.0.1:8000`: send it `backend/.env` and `backend/data/app.db` with
 Taildrop and it puts them in place without displaying them. Run it from a checkout that only
-serves, not one you develop in.
+serves, not one you develop in. Where OpenCode is installed it also registers the models
+there as `refrakt/<id>`, so T3 Code's model picker lists them.
 
 ## Bezpečnost
 

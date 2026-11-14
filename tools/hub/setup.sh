@@ -73,3 +73,26 @@ set -a; . "$token_file"; set +a
 count="$(curl -fsS http://127.0.0.1:8000/v1/models -H "Authorization: Bearer $REFRAKT_GATEWAY_TOKEN" \
   | python3 -c 'import json, sys; print(len(json.load(sys.stdin)["data"]) - 1)')"
 echo "Refrakt runs on 127.0.0.1:8000 with $count models. Token for clients: $token_file"
+
+# OpenCode (and through it T3 Code's model picker) gets the models as `refrakt/<id>`.
+# Run this script again after adding a key in Refrakt to refresh the list.
+if command -v opencode >/dev/null; then
+  curl -fsS http://127.0.0.1:8000/v1/models -H "Authorization: Bearer $REFRAKT_GATEWAY_TOKEN" \
+    | TOKEN_PATH="${token_file%.env}.token" python3 -c '
+import json, os, sys
+path = os.path.expanduser("~/.config/opencode/opencode.json")
+config = json.load(open(path)) if os.path.exists(path) else {"$schema": "https://opencode.ai/config.json"}
+config.setdefault("provider", {})["refrakt"] = {
+    "npm": "@ai-sdk/openai-compatible",
+    "name": "Refrakt",
+    "options": {
+        "baseURL": "http://127.0.0.1:8000/v1",
+        "apiKey": "{file:" + os.environ["TOKEN_PATH"] + "}",
+    },
+    "models": {m["id"]: {"name": m["id"]} for m in json.load(sys.stdin)["data"]},
+}
+os.makedirs(os.path.dirname(path), exist_ok=True)
+json.dump(config, open(path, "w"), indent=2)
+print("OpenCode: refrakt/* models written to", path)
+'
+fi
