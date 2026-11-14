@@ -453,7 +453,7 @@ curl http://127.0.0.1:8000/v1/chat/completions -H "Authorization: Bearer $GATEWA
 
 - `model` is a slug from `/v1/models` (one call, no fallback; the caller decides what to try
   next) or `auto` (this app's own provider chain).
-- Tools work as in the OpenAI API. Streaming does not.
+- Tools and streaming (`stream: true`) work as in the OpenAI API.
 - With no token the endpoint does not exist. Without `PUBLIC_MODE` it answers only to this
   machine, like the rest of the API.
 - Errors keep the provider's status and `Retry-After`, never the provider's raw message.

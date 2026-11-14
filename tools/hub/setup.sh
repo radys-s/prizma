@@ -36,6 +36,9 @@ mkdir -p "$(dirname "$token_file")"
 umask 077
 grep '^GATEWAY_TOKEN=' "$env_file" | tail -1 | sed 's/^/REFRAKT_/' > "$token_file"
 chmod 600 "$token_file"
+# The bare token, for clients that read a file instead of the environment (OpenCode's
+# `{file:...}` in opencode.json).
+sed 's/^REFRAKT_GATEWAY_TOKEN=//' "$token_file" > "${token_file%.env}.token"
 
 unit="$HOME/.config/systemd/user/refrakt.service"
 mkdir -p "$(dirname "$unit")"
