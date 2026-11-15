@@ -335,9 +335,9 @@ REGISTRY: list[ProviderModel] = [
         id="openrouter_free",
         display_name="OpenRouter (free model pool)",
         models=(
-            "openrouter/minimax/minimax-m3:free",  # verified
-            "openrouter/z-ai/glm-5.2:free",  # verified present, often rate-limited
-            "openrouter/nvidia/nemotron-3-super-120b-a12b:free",  # verified
+            "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",  # verified 2026-11-15
+            "openrouter/nvidia/nemotron-3.5-lightning:free",  # verified 2026-11-15
+            "openrouter/google/gemma-4-31b-it:free",  # verified 2026-11-15
         ),
         capabilities=("general", "code", "creative"),
         signup_url="https://openrouter.ai/settings/keys",
@@ -404,17 +404,16 @@ REGISTRY: list[ProviderModel] = [
     # the split, "NVIDIA" would mean whichever slug happened to answer first.
     ProviderModel(
         id="nvidia_kimi",
-        display_name="NVIDIA · Kimi K3",
+        display_name="NVIDIA · Kimi K2.6",
         models=(
-            "nvidia_nim/moonshotai/kimi-k3",
-            "nvidia_nim/moonshotai/kimi-k2.6",
+            "nvidia_nim/moonshotai/kimi-k2.6",  # verified present 2026-11-15
         ),
         capabilities=("code", "general", "long_context"),
         signup_url="https://build.nvidia.com/settings/api-keys",
         key_prefix="nvapi-",
         key_id="nvidia",
         notes=(
-            "Kimi K3 zdarma přes NVIDIA. Moonshot vlastní free API nemá — "
+            "Kimi K2.6 zdarma přes NVIDIA. Moonshot vlastní free API nemá — "
             "tudy je to jediná bezplatná cesta. Neověřeno — otestuj."
         ),
         strength=3,
@@ -424,8 +423,7 @@ REGISTRY: list[ProviderModel] = [
         id="nvidia_deepseek",
         display_name="NVIDIA · DeepSeek",
         models=(
-            "nvidia_nim/deepseek-ai/deepseek-r1",
-            "nvidia_nim/deepseek-ai/deepseek-v4",
+            "nvidia_nim/deepseek-ai/deepseek-v4.1-flash",  # verified present 2026-11-15
         ),
         capabilities=("general", "code"),
         signup_url="https://build.nvidia.com/settings/api-keys",
@@ -440,11 +438,11 @@ REGISTRY: list[ProviderModel] = [
     ),
     ProviderModel(
         id="nvidia_nemotron",
-        display_name="NVIDIA · Nemotron / Qwen",
+        display_name="NVIDIA · Nemotron",
         models=(
-            "nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b",
-            "nvidia_nim/qwen/qwen3.5-397b-a17b",
-            "nvidia_nim/meta/llama-3.1-70b-instruct",
+            "nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b",  # verified present 2026-11-15
+            "nvidia_nim/nvidia/nemotron-3-super-120b-a12b",  # verified present 2026-11-15
+            "nvidia_nim/nvidia/llama-3.1-nemotron-ultra-253b-v1",  # verified present 2026-11-15
         ),
         capabilities=("general", "long_context", "creative"),
         signup_url="https://build.nvidia.com/settings/api-keys",
