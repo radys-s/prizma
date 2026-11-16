@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Run Refrakt on a hub as a systemd --user service, with the keys from Tomáš's notebook.
 #
-# On the notebook, send the database and its key to this hub with Tailscale:
-#   tailscale file cp backend\data\app.db backend\data\master.key <hub>:
+# On the notebook, make a copy of the database that holds only the keys (app.db itself also
+# holds every conversation, which a hub has no use for), and send it with its key over Tailscale:
+#   python tools\hub\export_keys.py
+#   tailscale file cp backend\data\hub\app.db backend\data\master.key <hub>:
 # (send backend\.env as well, or instead of master.key, if SECRET_KEY is set there). Then run
 # this script. It moves them into place without displaying them, adds a gateway token for
 # Studio and the hub agents, and starts the service on 127.0.0.1:8000. Safe to run again.
