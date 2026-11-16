@@ -10,6 +10,7 @@ from urllib.parse import unquote
 import pytest
 from sqlmodel import select
 
+from app import spa
 from app.auth import core, identities, oauth, throttle
 from app.db import normalize_database_url
 from app.models.auth import LoginAttempt, utcnow
@@ -225,27 +226,27 @@ def test_the_api_docs_are_closed_in_public_mode(client):
     """Everything behind them needs auth, but an anonymous visitor got an
     interactive map of a private app.
 
-    In a backend-only test checkout the SPA catch-all is not mounted, so the
-    disabled FastAPI routes return 404. In a packaged deployment the SPA may
-    answer with its app shell. In either case, no API schema or Swagger page
-    should be served."""
+    The status depends on whether the frontend is built. With `frontend/dist`
+    (CI, the packaged app) the SPA catch-all answers anything it does not
+    recognise with the app shell, so the paths return 200 and HTML. Without it
+    (a backend-only checkout) they are plain 404s. Either way no schema and no
+    Swagger page is served."""
     for path in ("/docs", "/redoc", "/openapi.json"):
         res = client.get(path)
-        if path == "/openapi.json":
-            assert res.status_code == 404
+        if spa.is_built():
+            assert res.status_code == 200
+            assert res.headers["content-type"].startswith("text/html")
         else:
-            assert res.status_code in (200, 404)
+            assert res.status_code == 404
         assert "swagger" not in res.text.lower()
         assert '"openapi"' not in res.text
 
 
+@pytest.mark.skipif(not spa.is_built(), reason="robots.txt ships in frontend/dist")
 def test_robots_disallows_everything(client):
     res = client.get("/robots.txt")
-    # The robots route is served by the frontend distribution in packaged
-    # deployments; backend-only test checkouts may not include that asset.
-    assert res.status_code in (200, 404)
-    if res.status_code == 200:
-        assert "Disallow: /" in res.text
+    assert res.status_code == 200
+    assert "Disallow: /" in res.text
 
 
 # ------------------------------------------------------- database URL (B1)
