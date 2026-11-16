@@ -452,18 +452,47 @@ curl http://127.0.0.1:8000/v1/chat/completions -H "Authorization: Bearer $GATEWA
 ```
 
 - `model` is a slug from `/v1/models` (one call, no fallback; the caller decides what to try
-  next) or `auto` (this app's own provider chain).
+  next) or `auto` (this app's own provider chain). The response's `model` is the slug that
+  answered and `provider` is its provider id.
+- The request fields that are used: `model`, `messages`, `tools`, `tool_choice`, `max_tokens`,
+  `max_completion_tokens`, `temperature`, `stream`. Any other field is ignored, not rejected.
 - Tools and streaming (`stream: true`) work as in the OpenAI API.
+- Token limits follow OpenAI's two fields. `max_tokens` asks for a short answer: on a reasoning
+  model (gpt-oss, Gemini Flash, ...) a value below 1024 is raised to 1024, because these
+  providers count the model's reasoning against the same limit and a small value used to come
+  back as an empty answer. The answer can then be longer than asked. `max_completion_tokens` is
+  a hard limit on reasoning and answer together and is never raised: if the model uses it up
+  reasoning, the response has empty content and `finish_reason: "length"`, as with OpenAI's
+  own models.
 - With no token the endpoint does not exist. Without `PUBLIC_MODE` it answers only to this
   machine, like the rest of the API.
-- Errors keep the provider's status and `Retry-After`, never the provider's raw message.
+- Errors keep the provider's status and `Retry-After`. The message is the provider id and the
+  error class (`groq: RateLimitError`), never the provider's raw message.
+- Set a timeout in the client. The gateway waits for the provider as long as the provider
+  keeps the connection open.
+
+Which models answer right now is in [docs/gateway-models.md](docs/gateway-models.md): every
+model from `/v1/models`, probed with one small request. `python tools/probe_gateway.py` prints
+a fresh table.
 
 On a Windows PC, `tools\startup\gateway-token.ps1` sets the token for Refrakt and for Studio
-(user variable `REFRAKT_GATEWAY_TOKEN`). On a hub, `tools/hub/setup.sh` installs a
-`refrakt.service` on `127.0.0.1:8000`: send it `backend/data/app.db` and `backend/data/master.key`
-(or `backend/.env`, if `SECRET_KEY` is set there) with Taildrop and it puts them in place without displaying them. Run it from a checkout that only
-serves, not one you develop in. Where OpenCode is installed it also registers the models
-there as `refrakt/<id>`, so T3 Code's model picker lists them.
+(user variable `REFRAKT_GATEWAY_TOKEN`).
+
+On a hub, `tools/hub/setup.sh` installs a `refrakt.service` on `127.0.0.1:8000`. The hub needs
+the keys, not the conversations, so first make a database that holds only the keys and send
+that one with Taildrop:
+
+```
+python tools\hub\export_keys.py
+tailscale file cp backend\data\hub\app.db backend\data\master.key <hub>:
+```
+
+(Send `backend\.env` as well, or instead of `master.key`, if `SECRET_KEY` is set there.) The
+script puts the files in place without displaying them and writes the token for clients to
+`~/.config/refrakt/gateway.env` (as `REFRAKT_GATEWAY_TOKEN=...`) and `~/.config/refrakt/gateway.token`
+(the bare token). Run it from a checkout that only serves, not one you develop in. Where
+OpenCode is installed it also registers the models there as `refrakt/<id>`, so T3 Code's model
+picker lists them; run it again after adding a key to refresh that list.
 
 ## Bezpečnost
 
