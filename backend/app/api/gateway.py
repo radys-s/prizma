@@ -96,7 +96,14 @@ class ChatRequest(BaseModel):
     stream: bool = False
 
 
+# Reasoning models that litellm 1.98.0 reports as not reasoning. Each one came
+# back empty under a small `max_tokens` in `tools/probe_gateway.py`.
+_REASONS_UNLISTED = frozenset({"zai/glm-4.5-flash"})
+
+
 def _reasons(slug: str) -> bool:
+    if slug in _REASONS_UNLISTED:
+        return True
     try:
         return bool(litellm.supports_reasoning(model=slug))
     except Exception:  # noqa: BLE001 - unknown slug: leave the caller's limit alone
