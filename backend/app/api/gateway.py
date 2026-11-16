@@ -35,6 +35,11 @@ from app.routing import selector
 
 AUTO = "auto"
 
+# A reasoning model spends its token limit thinking before it writes anything.
+# Measured 2026-11-16 on one-line prompts: gpt-oss-120b used 21-126 reasoning
+# tokens and Gemini Flash 94-588, so `max_tokens: 10` bought an empty answer.
+REASONING_MIN_TOKENS = 1024
+
 
 def require_token(request: Request) -> None:
     if not settings.gateway_token:
@@ -86,8 +91,38 @@ class ChatRequest(BaseModel):
     tools: list[dict] | None = None
     tool_choice: str | dict | None = None
     max_tokens: int | None = None
+    max_completion_tokens: int | None = None
     temperature: float | None = None
     stream: bool = False
+
+
+def _reasons(slug: str) -> bool:
+    try:
+        return bool(litellm.supports_reasoning(model=slug))
+    except Exception:  # noqa: BLE001 - unknown slug: leave the caller's limit alone
+        return False
+
+
+def _token_limit(body: ChatRequest, slug: str) -> dict:
+    """The caller's two limits, as OpenAI defines them.
+
+    `max_completion_tokens` counts reasoning and answer together and is kept
+    exactly: a model that reasons past it returns empty content with
+    `finish_reason: "length"`, as OpenAI's own models do.
+
+    `max_tokens` is the older field for the length of the answer, from before
+    models reasoned. The providers here count reasoning against it too, so on a
+    reasoning model a small value is raised to leave room to think; the answer
+    can then be longer than asked. Both go upstream as `max_tokens`, the one
+    spelling every provider in the registry accepts.
+    """
+    if body.max_completion_tokens is not None:
+        return {"max_tokens": body.max_completion_tokens}
+    if body.max_tokens is None:
+        return {}
+    if body.max_tokens < REASONING_MIN_TOKENS and _reasons(slug):
+        return {"max_tokens": REASONING_MIN_TOKENS}
+    return {"max_tokens": body.max_tokens}
 
 
 def _error(status: int, message: str, retry_after: float | None = None) -> JSONResponse:
@@ -134,9 +169,8 @@ async def chat_completions(body: ChatRequest):
     if body.tools:
         extra["tools"] = body.tools
         extra["tool_choice"] = body.tool_choice or "auto"
-    for name in ("max_tokens", "temperature"):
-        if getattr(body, name) is not None:
-            extra[name] = getattr(body, name)
+    if body.temperature is not None:
+        extra["temperature"] = body.temperature
     if body.stream:
         extra["stream"] = True
 
@@ -144,7 +178,11 @@ async def chat_completions(body: ChatRequest):
     for provider, slug in targets:
         try:
             response = await litellm.acompletion(
-                model=slug, **keystore.endpoint(provider), messages=body.messages, **extra
+                model=slug,
+                **keystore.endpoint(provider),
+                messages=body.messages,
+                **_token_limit(body, slug),
+                **extra,
             )
             if body.stream:
                 # Wait for the first chunk here: until something has been sent,

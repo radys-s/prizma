@@ -221,3 +221,55 @@ def test_streaming_break_mid_answer_ends_with_an_error_event_without_the_key(cli
     assert json.loads(events[-1])["error"]["message"] == "groq: APIConnectionError"
     assert "[DONE]" not in events
     assert "gsk-test" not in r.text
+
+
+# ---------------------------------------------------------- token limits
+
+
+def _limit_sent(client, calls, **limit) -> dict:
+    r = client.post(
+        "/v1/chat/completions",
+        headers=AUTH,
+        json={"model": GROQ, "messages": [{"role": "user", "content": "hi"}], **limit},
+    )
+    assert r.status_code == 200
+    return {k: v for k, v in calls[-1].items() if k in ("max_tokens", "max_completion_tokens")}
+
+
+def test_small_max_tokens_leaves_a_reasoning_model_room_to_answer(client, gateway, monkeypatch):
+    # Found 2026-11-15: `max_tokens: 10` on gpt-oss-120b came back 200 with empty
+    # content, because the model spent all ten tokens reasoning.
+    from app.api.gateway import REASONING_MIN_TOKENS
+
+    _fake(monkeypatch, gateway)
+    monkeypatch.setattr("app.api.gateway.litellm.supports_reasoning", lambda model: True)
+    assert _limit_sent(client, gateway, max_tokens=10) == {"max_tokens": REASONING_MIN_TOKENS}
+    assert _limit_sent(client, gateway, max_tokens=5000) == {"max_tokens": 5000}
+    assert _limit_sent(client, gateway) == {}
+
+
+def test_max_tokens_is_untouched_on_a_model_that_does_not_reason(client, gateway, monkeypatch):
+    _fake(monkeypatch, gateway)
+    monkeypatch.setattr("app.api.gateway.litellm.supports_reasoning", lambda model: False)
+    assert _limit_sent(client, gateway, max_tokens=10) == {"max_tokens": 10}
+
+
+def test_max_completion_tokens_is_a_hard_limit_even_when_reasoning(client, gateway, monkeypatch):
+    _fake(monkeypatch, gateway)
+    monkeypatch.setattr("app.api.gateway.litellm.supports_reasoning", lambda model: True)
+    assert _limit_sent(client, gateway, max_completion_tokens=10) == {"max_tokens": 10}
+    assert _limit_sent(client, gateway, max_completion_tokens=10, max_tokens=50) == {"max_tokens": 10}
+
+
+def test_streaming_gets_the_same_room(client, gateway, monkeypatch):
+    from app.api.gateway import REASONING_MIN_TOKENS
+
+    _fake_stream(monkeypatch, gateway)
+    monkeypatch.setattr("app.api.gateway.litellm.supports_reasoning", lambda model: True)
+    r = client.post(
+        "/v1/chat/completions",
+        headers=AUTH,
+        json={"model": GROQ, "messages": [{"role": "user", "content": "hi"}], "stream": True, "max_tokens": 10},
+    )
+    assert r.status_code == 200
+    assert gateway[0]["max_tokens"] == REASONING_MIN_TOKENS
