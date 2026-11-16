@@ -562,9 +562,8 @@ stav před spoléháním na konkrétní čísla:
 | OpenRouter | rotující pool `:free` modelů | Ne | 20 req/min, 50–1000 req/den | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) | `sk-or-` |
 | Cerebras | Llama 3.3 70B | **Ano** (od 08/2026) | 1M tokenů/den po ověření karty | [cloud.cerebras.ai](https://cloud.cerebras.ai) | `csk-` |
 | GitHub Models | GPT-4.1 / o4-mini | Ne | limit podle GitHub plánu | [github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens) | `github_pat_` |
-| NVIDIA · Kimi K3 | `moonshotai/kimi-k3` | Ne | ~1000 kreditů po registraci | [build.nvidia.com/settings/api-keys](https://build.nvidia.com/settings/api-keys) | `nvapi-` |
-| NVIDIA · DeepSeek | `deepseek-ai/deepseek-r1` | Ne | stejný klíč jako Kimi | — | `nvapi-` |
-| NVIDIA · Nemotron / Qwen | `nemotron-3-ultra` / `qwen3.5-397b` | Ne | stejný klíč jako Kimi | — | `nvapi-` |
+| NVIDIA · DeepSeek | `deepseek-ai/deepseek-v4.1-flash` | Ne | ~1000 kreditů po registraci | [build.nvidia.com/settings/api-keys](https://build.nvidia.com/settings/api-keys) | `nvapi-` |
+| NVIDIA · Nemotron | `nemotron-3-ultra` | Ne | stejný klíč jako DeepSeek | — | `nvapi-` |
 | Z.AI | GLM 4.7 Flash | Ne | zdarma bez expirace | [z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list) | — |
 | Cohere | Command A+ / Command R+ | Ne | 1000 volání/měsíc, nekomerčně | [dashboard.cohere.com/api-keys](https://dashboard.cohere.com/api-keys) | — |
 | Exa · Hledání | nativní search API | Ne | $10 kreditů **každý měsíc** | [dashboard.exa.ai/api-keys](https://dashboard.exa.ai/api-keys) | — |
@@ -573,14 +572,14 @@ stav před spoléháním na konkrétní čísla:
 | Serper · Hledání | Google SERP | Ne | 2500 dotazů jednorázově | [serper.dev](https://serper.dev) | — |
 | Firecrawl · Hledání | search + scrape | Ne | 500 kreditů jednorázově | [firecrawl.dev](https://firecrawl.dev) | `fc-` |
 
-**Tři NVIDIA řádky sdílejí jeden klíč.** Stejně jako oba Mistraly: v registru
-mají společné `key_id`, takže se `nvapi-` klíč vkládá jednou a odemkne všechny
-tři. Klíč ber z **build.nvidia.com/settings/api-keys** — klíč, který nabízí
+**Oba NVIDIA řádky sdílejí jeden klíč.** Stejně jako oba Mistraly: v registru
+mají společné `key_id`, takže se `nvapi-` klíč vkládá jednou a odemkne oba. Klíč ber z **build.nvidia.com/settings/api-keys** — klíč, který nabízí
 stránka konkrétního modelu, platí jen pro ten jeden model.
 
 **Kde není DeepSeek a Moonshot přímo:** DeepSeek dává jednorázový grant, který
-vyprší za 30 dnů, Moonshot free tier nemá vůbec. Přes NVIDIA NIM jsou oba
-trvale zdarma — proto jsou v tabulce takhle. Cloudflare Workers AI chybí,
+vyprší za 30 dnů, Moonshot free tier nemá vůbec. DeepSeek je trvale zdarma
+přes NVIDIA NIM — proto je v tabulce takhle. Kimi tam byl také, dokud NVIDIA
+model `moonshotai/kimi-k2.6` v listopadu 2026 nestáhla. Cloudflare Workers AI chybí,
 protože potřebuje account ID *i* token, a keystore umí jeden secret na slot.
 SambaNova chce kartu.
 

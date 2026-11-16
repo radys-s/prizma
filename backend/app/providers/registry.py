@@ -26,8 +26,10 @@ whole catalogue.
   for exactly one provider.
 * *SambaNova* asks for a card on the tier that matters.
 * *DeepSeek* and *Moonshot (Kimi)* have no standing free tier — DeepSeek's
-  grant is one-time and expires in 30 days, Moonshot has none at all. Both are
-  permanently free through NVIDIA NIM instead, which is how they appear below.
+  grant is one-time and expires in 30 days, Moonshot has none at all. DeepSeek
+  is permanently free through NVIDIA NIM instead, which is how it appears
+  below. Kimi was too, until NVIDIA retired `moonshotai/kimi-k2.6` (410 and
+  gone from its catalogue on 2026-11-16) and listed no other Kimi model.
 
 **Search APIs not here, and why** (re-checked 2026-08-30):
 
@@ -351,7 +353,6 @@ REGISTRY: list[ProviderModel] = [
         display_name="Cerebras (GPT-OSS 120B)",
         models=(
             "cerebras/gpt-oss-120b",
-            "cerebras/gemma-4-31b",
         ),
         capabilities=("fast",),
         signup_url="https://cloud.cerebras.ai",
@@ -398,27 +399,10 @@ REGISTRY: list[ProviderModel] = [
         strength=3,
         planner_rank=2,
     ),
-    # NVIDIA NIM: one `nvapi-` key, three picker entries. Same trick as the two
+    # NVIDIA NIM: one `nvapi-` key, two picker entries. Same trick as the two
     # Mistral rows — `key_id` collapses them into a single credential slot, so
     # the key is pasted once and a specific model can still be pinned. Without
     # the split, "NVIDIA" would mean whichever slug happened to answer first.
-    ProviderModel(
-        id="nvidia_kimi",
-        display_name="NVIDIA · Kimi K2.6",
-        models=(
-            "nvidia_nim/moonshotai/kimi-k2.6",  # verified present 2026-11-15
-        ),
-        capabilities=("code", "general", "long_context"),
-        signup_url="https://build.nvidia.com/settings/api-keys",
-        key_prefix="nvapi-",
-        key_id="nvidia",
-        notes=(
-            "Kimi K2.6 zdarma přes NVIDIA. Moonshot vlastní free API nemá — "
-            "tudy je to jediná bezplatná cesta. Neověřeno — otestuj."
-        ),
-        strength=3,
-        planner_rank=3,
-    ),
     ProviderModel(
         id="nvidia_deepseek",
         display_name="NVIDIA · DeepSeek",
@@ -441,8 +425,6 @@ REGISTRY: list[ProviderModel] = [
         display_name="NVIDIA · Nemotron",
         models=(
             "nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b",  # verified present 2026-11-15
-            "nvidia_nim/nvidia/nemotron-3-super-120b-a12b",  # verified present 2026-11-15
-            "nvidia_nim/nvidia/llama-3.1-nemotron-ultra-253b-v1",  # verified present 2026-11-15
         ),
         capabilities=("general", "long_context", "creative"),
         signup_url="https://build.nvidia.com/settings/api-keys",

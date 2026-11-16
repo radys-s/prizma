@@ -273,3 +273,12 @@ def test_streaming_gets_the_same_room(client, gateway, monkeypatch):
     )
     assert r.status_code == 200
     assert gateway[0]["max_tokens"] == REASONING_MIN_TOKENS
+
+
+def test_a_reasoning_model_litellm_does_not_know_still_gets_room():
+    # Found by tools/probe_gateway.py on 2026-11-16: glm-4.5-flash thinks before it
+    # answers, litellm 1.98.0 says it does not, and `max_tokens: 32` came back empty.
+    from app.api.gateway import _reasons
+
+    assert _reasons("zai/glm-4.5-flash")
+    assert not _reasons("mistral/codestral-latest")
