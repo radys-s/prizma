@@ -100,6 +100,7 @@ app.include_router(gateway.router)
 
 
 @app.get("/api/health")
+@app.get("/health")
 def health():
     """Unauthenticated on purpose — it reveals nothing but liveness."""
     return {"ok": True}

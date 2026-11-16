@@ -10,6 +10,7 @@ from urllib.parse import unquote
 import pytest
 from sqlmodel import select
 
+from app import spa
 from app.auth import core, identities, oauth, throttle
 from app.db import normalize_database_url
 from app.models.auth import LoginAttempt, utcnow
@@ -225,16 +226,23 @@ def test_the_api_docs_are_closed_in_public_mode(client):
     """Everything behind them needs auth, but an anonymous visitor got an
     interactive map of a private app.
 
-    The status code is 200, not 404: the SPA catch-all answers anything it does
-    not recognise with the app shell. What matters is that no schema and no
-    Swagger page is served, so that is what this asserts."""
+    The status depends on whether the frontend is built. With `frontend/dist`
+    (CI, the packaged app) the SPA catch-all answers anything it does not
+    recognise with the app shell, so the paths return 200 and HTML. Without it
+    (a backend-only checkout) they are plain 404s. Either way no schema and no
+    Swagger page is served."""
     for path in ("/docs", "/redoc", "/openapi.json"):
         res = client.get(path)
-        assert "application/json" not in res.headers.get("content-type", "")
+        if spa.is_built():
+            assert res.status_code == 200
+            assert res.headers["content-type"].startswith("text/html")
+        else:
+            assert res.status_code == 404
         assert "swagger" not in res.text.lower()
         assert '"openapi"' not in res.text
 
 
+@pytest.mark.skipif(not spa.is_built(), reason="robots.txt ships in frontend/dist")
 def test_robots_disallows_everything(client):
     res = client.get("/robots.txt")
     assert res.status_code == 200
