@@ -313,9 +313,14 @@ async def exchange(provider_id: str, code: str, verifier: str) -> dict:
 
     claims = _decode_claims(id_token)
     _validate(claims, provider, client_id)
+    # The same rule as GitHub's below: `identities.owner_allows` decides by this
+    # address who may claim the account, so only one the provider vouches for
+    # counts. Apple sends the flag as a string. Microsoft sends none, and its
+    # `email` claim is not verified for accounts from other tenants.
+    verified = claims.get("email_verified") in (True, "true")
     return {
         "sub": str(claims["sub"]),
-        "email": claims.get("email"),
+        "email": claims.get("email") if verified else None,
         "name": claims.get("name") or claims.get("given_name") or claims.get("email"),
     }
 
