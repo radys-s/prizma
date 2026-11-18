@@ -65,4 +65,23 @@ describe("TwoFactorStep", () => {
     expect(verifyTwoFactor).toHaveBeenCalledOnce();
     expect(screen.getByRole("alert").textContent).toContain("Kód nesedí.");
   });
+
+  // The boxes are disabled while the code is checked, and a disabled input
+  // cannot take focus — so focusing in the catch did nothing, and on a phone
+  // the keyboard closed after every wrong auto-submitted code.
+  it("puts the cursor back in the first box after a wrong code", async () => {
+    // Rejects after a tick, like a real request: by then React has rendered
+    // the disabled boxes.
+    verifyTwoFactor.mockImplementation(
+      () => new Promise((_, reject) => setTimeout(() => reject(new Error("Kód nesedí.")), 0))
+    );
+    render(<TwoFactorStep challenge={CHALLENGE} onVerified={() => {}} onBack={() => {}} />);
+
+    await act(async () => typeCode("000000"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(document.activeElement).toBe(screen.getByLabelText("Číslice 1"));
+  });
 });

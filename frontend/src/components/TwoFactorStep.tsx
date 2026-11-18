@@ -38,10 +38,18 @@ export function TwoFactorStep({ challenge, onVerified, onBack }: Props) {
   const [cooldown, setCooldown] = useState(isApp ? 0 : RESEND_COOLDOWN);
 
   const boxes = useRef<Array<HTMLInputElement | null>>([]);
+  // Bumped after a wrong code. The focus has to wait for the render that
+  // enables the boxes again — a disabled input ignores focus(), which used to
+  // close the phone keyboard after every wrong code.
+  const [refocus, setRefocus] = useState(0);
 
   useEffect(() => {
     boxes.current[0]?.focus();
   }, []);
+
+  useEffect(() => {
+    if (refocus > 0 && !busy) boxes.current[0]?.focus();
+  }, [refocus, busy]);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -118,7 +126,7 @@ export function TwoFactorStep({ challenge, onVerified, onBack }: Props) {
       tried.current = "";
       setDigits(Array(DIGITS).fill(""));
       setRecovery("");
-      boxes.current[0]?.focus();
+      setRefocus((n) => n + 1);
     } finally {
       setBusy(false);
     }
