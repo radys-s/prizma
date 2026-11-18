@@ -39,14 +39,32 @@ DENIED_NAMES = frozenset(
         ".env",
         ".env.local",
         ".env.production",
+        ".envrc",
         "app.db",
         "id_rsa",
+        "id_ed25519",
+        "id_ecdsa",
+        "id_dsa",
         "credentials.json",
         ".npmrc",
         ".pypirc",
         ".git-credentials",
     }
 )
+
+# `.env.local` and `.env.production` above are two of a family: every
+# `.env.<something>` holds the same kind of values (`.env.development.local` is
+# where Next.js and Vite projects keep their keys). Only the templates meant to
+# be committed stay readable — the rule `.dockerignore` applies too.
+ENV_TEMPLATES = frozenset({".env.example", ".env.sample", ".env.template"})
+
+
+def secret_name(name: str) -> bool:
+    """Is this file name on the denylist? Compared in lower case."""
+    lowered = name.lower()
+    if lowered in DENIED_NAMES:
+        return True
+    return lowered.startswith(".env.") and lowered not in ENV_TEMPLATES
 
 # Adresáře, které nemá smysl číst a je v nich hodně souborů: procházení by
 # stálo minutu a v odpovědi by nebylo nic užitečného. `.git` je navíc místo,
@@ -157,7 +175,7 @@ def denied(path: Path) -> bool:
     lowered = {p.lower() for p in path.parts}
     if lowered & {d.lower() for d in DENIED_DIRS}:
         return True
-    if path.name.lower() in DENIED_NAMES:
+    if secret_name(path.name):
         return True
     return path.suffix.lower() in DENIED_SUFFIXES
 
@@ -187,7 +205,7 @@ def resolve(raw: str, *, must_exist: bool = True) -> Path:
     lowered = {p.lower() for p in path.parts}
     if lowered & {d.lower() for d in DENIED_DIRS}:
         raise Denied(f"Cesta {path} vede do složky, která je pro agenta zavřená.")
-    if path.name.lower() in DENIED_NAMES:
+    if secret_name(path.name):
         raise Denied(f"Soubor {path.name} může obsahovat přihlašovací údaje a nečte se.")
     if path.suffix.lower() in DENIED_SUFFIXES:
         raise Denied(f"Soubor {path.name} vypadá jako klíč a nečte se.")
