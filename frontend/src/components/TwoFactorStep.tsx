@@ -89,8 +89,22 @@ export function TwoFactorStep({ challenge, onVerified, onBack }: Props) {
     place(index, event.clipboardData.getData("text"));
   }
 
-  async function submit(event: FormEvent) {
+  // The sixth digit is the submit: a full code leaves nothing to decide. The
+  // ref keeps one code from going out twice (a re-render, StrictMode), and a
+  // failed code clears the boxes, so the next try needs six new digits.
+  const tried = useRef("");
+  useEffect(() => {
+    if (useRecovery || code.length !== DIGITS || tried.current === code) return;
+    tried.current = code;
+    void verify();
+  }, [code, useRecovery]);
+
+  function submit(event: FormEvent) {
     event.preventDefault();
+    void verify();
+  }
+
+  async function verify() {
     if (!complete || busy) return;
     setBusy(true);
     setError("");
@@ -101,6 +115,7 @@ export function TwoFactorStep({ challenge, onVerified, onBack }: Props) {
       onVerified();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ověření selhalo.");
+      tried.current = "";
       setDigits(Array(DIGITS).fill(""));
       setRecovery("");
       boxes.current[0]?.focus();
