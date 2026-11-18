@@ -175,9 +175,28 @@ async def _read_body(request: Request) -> ChatRequest:
     the size of a `/v1` body, so a caller without the token could make this
     process buffer and parse as much JSON as it cared to send. With no body
     parameter the token is checked first.
+
+    JSON is parsed first, apart from validation, for the same reason FastAPI
+    does it: a body that does not parse is reported without its content.
+    Pydantic's own JSON error would carry the whole raw body back in the 422,
+    and as bytes that are not UTF-8 it crashed the error handler into a 500.
     """
     try:
-        return ChatRequest.model_validate_json(await request.body())
+        data = json.loads(await request.body())
+    except ValueError as exc:  # JSONDecodeError, or bytes that are not text at all
+        raise RequestValidationError(
+            [
+                {
+                    "type": "json_invalid",
+                    "loc": ("body", getattr(exc, "pos", 0)),
+                    "msg": "JSON decode error",
+                    "input": {},
+                    "ctx": {"error": getattr(exc, "msg", "not UTF-8")},
+                }
+            ]
+        ) from exc
+    try:
+        return ChatRequest.model_validate(data)
     except ValidationError as exc:
         errors = exc.errors(include_url=False)
         raise RequestValidationError([{**e, "loc": ("body", *e["loc"])} for e in errors]) from exc

@@ -358,3 +358,23 @@ def test_an_invalid_body_is_still_a_422(client, gateway):
         content=b"{not json",
     )
     assert broken.status_code == 422
+
+
+def test_a_body_that_is_not_utf8_is_a_422_not_a_crash(client, gateway):
+    r = client.post(
+        "/v1/chat/completions",
+        headers={**AUTH, "Content-Type": "application/json"},
+        content=b"\xff{",
+    )
+    assert r.status_code == 422
+
+
+def test_a_broken_body_is_not_echoed_back(client, gateway):
+    junk = b'{"model": "auto", ' + b"x" * 5000
+    r = client.post(
+        "/v1/chat/completions",
+        headers={**AUTH, "Content-Type": "application/json"},
+        content=junk,
+    )
+    assert r.status_code == 422
+    assert "x" * 100 not in r.text
