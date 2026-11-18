@@ -4692,10 +4692,12 @@ kbd.mono {
    tyhle jsou až tři a odcházejí samy, až doběhne odpočet. Sdílené by to
    znamenalo tři podmíněné modifikátory nad pravidlem, které mělo jednu práci. */
 
+/* Nahoře pod lištou, ne dole: dole ležel přes pravý kraj composeru i
+   s tlačítkem Odeslat, a dvě karty pod sebou zakryly i chybu, ke které patří. */
 .limit-stack {
   position: fixed;
   right: max(18px, env(safe-area-inset-right));
-  bottom: calc(18px + env(safe-area-inset-bottom));
+  top: calc(66px + env(safe-area-inset-top));
   z-index: 92; /* nad update-toast: tenhle mizí sám, ten druhý čeká na klik */
   display: flex;
   flex-direction: column;
@@ -4773,8 +4775,7 @@ kbd.mono {
   .limit-stack {
     right: max(12px, env(safe-area-inset-right));
     left: max(12px, env(safe-area-inset-left));
-    /* Nad composerem, ne přes něj: na telefonu je spodní pás celý jeho. */
-    bottom: calc(84px + env(safe-area-inset-bottom));
+    top: calc(56px + env(safe-area-inset-top));
   }
 
   .limit-toast {
