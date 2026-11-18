@@ -144,7 +144,10 @@ def resolve(
             subject=subject,
             email=email,
             display_name=display_name or email,
-            password_hash=secret_hash,
+            # The legacy column is where `local_secret()` looks for the access
+            # code. Any other secret written here — the e-mail password — would
+            # open `POST /login` with no second factor.
+            password_hash=secret_hash if provider == LOCAL_PROVIDER else None,
         )
         session.add(account)
         session.commit()
@@ -207,6 +210,11 @@ def local_secret(session: Session) -> str | None:
 
     Falls back to `AppUser.password_hash` for a database that predates
     identities and has not been through `_backfill_identities()` yet.
+
+    Never for an account created by e-mail registration: until this was fixed,
+    `resolve()` stored the e-mail password in that column, and existing
+    databases still hold it there. Returning it would let the e-mail password
+    through `POST /login` without the mailed code or the authenticator app.
     """
     from app.auth import core
 
@@ -216,6 +224,8 @@ def local_secret(session: Session) -> str | None:
     identity = find_identity(session, LOCAL_PROVIDER, LOCAL_PROVIDER)
     if identity is not None and identity.secret_hash:
         return identity.secret_hash
+    if user.provider == EMAIL_PROVIDER:
+        return None
     return user.password_hash
 
 
