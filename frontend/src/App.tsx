@@ -1234,6 +1234,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           onClose={() => setSettingsOpen(false)}
           auth={auth}
           onAuthChanged={onAuthChanged}
+          minSlots={minSlots}
           onChanged={() => {
             // A key change moves both lists: what's configured, and what the
             // model picker is allowed to offer.

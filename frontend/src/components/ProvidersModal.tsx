@@ -108,6 +108,8 @@ interface Props {
   auth: AuthState | null;
   /** Re-fetches `/api/auth/state` after a link, unlink or code change. */
   onAuthChanged: () => void;
+  /** How many answering keys the router needs before it answers at all. */
+  minSlots?: number;
 }
 
 export function ProvidersModal({
@@ -123,8 +125,15 @@ export function ProvidersModal({
   onChanged,
   auth,
   onAuthChanged,
+  minSlots = 2,
 }: Props) {
   const groups = useMemo(() => groupByKey(providers), [providers]);
+  // Search-only keys do not count towards the minimum, so they get their own
+  // section below the ones that do — mixed together, seven search cards stood
+  // between the first answering key and the second.
+  const answering = groups.filter((g) => g.capabilities.some((c) => c !== "search"));
+  const searching = groups.filter((g) => g.capabilities.every((c) => c === "search"));
+  const answeringReady = answering.filter((g) => g.configured).length;
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Record<string, string>>({});
@@ -319,6 +328,185 @@ export function ProvidersModal({
     }
   };
 
+  const renderCard = (group: KeyGroup) => {
+    const draft = drafts[group.keyId] ?? "";
+    const prefix = group.primary.key_prefix;
+    const prefixMismatch = draft.length > 3 && prefix !== "" && !draft.startsWith(prefix);
+    const busyLabel = busy[group.keyId];
+    const result = results[group.keyId];
+    // Once a key is stored there is nothing to type, so the field goes
+    // away until "Změnit klíč" — or until the key is deleted.
+    const showInput = !group.configured || editing[group.keyId] === true;
+
+    return (
+      <div
+        key={group.keyId}
+        className={`provider-card${group.configured ? " configured" : ""}`}
+      >
+        <div className="provider-head">
+          <ProviderMark id={group.primary.id} name={group.name} />
+          <span className="provider-name">{group.name}</span>
+          <span className="provider-dot" aria-hidden="true" />
+          <span className="provider-state">
+            {group.configured ? "Nastaveno" : "Chybí klíč"}
+          </span>
+          <span className="spacer" />
+          <span className={`chip${group.requiresCard ? " warn" : ""}`}>
+            {group.requiresCard ? "vyžaduje kartu" : "bez karty"}
+          </span>
+        </div>
+
+        <ul className="provider-models">
+          {group.models.map((model) => (
+            <li key={model} className="model-pill">
+              {model}
+            </li>
+          ))}
+        </ul>
+
+        {group.notes.length > 0 && <p className="provider-meta">{group.notes.join(" ")}</p>}
+
+        <div className="provider-tags">
+          {group.capabilities.map((c) => (
+            <span key={c} className="chip">
+              {CAPABILITY_LABELS[c] ?? c}
+            </span>
+          ))}
+        </div>
+
+        <div className="key-row">
+          {showInput ? (
+            <>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => openSignupPage(group.primary)}
+                title={group.primary.signup_url}
+              >
+                <ExternalLink size={14} />
+                Otevřít stránku s klíčem
+              </button>
+
+              <div className="key-input">
+                <input
+                  type={revealed[group.keyId] ? "text" : "password"}
+                  value={draft}
+                  autoFocus={editing[group.keyId]}
+                  onChange={(e) =>
+                    setDrafts((prev) => ({ ...prev, [group.keyId]: e.target.value }))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && draft.trim()) save(group);
+                    if (e.key === "Escape" && group.configured) {
+                      e.stopPropagation(); // cancel the edit, don't close the dialog
+                      setDrafts((prev) => ({ ...prev, [group.keyId]: "" }));
+                      setEdit(group.keyId, false);
+                    }
+                  }}
+                  placeholder={prefix ? `${prefix}…` : "Vlož API klíč"}
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-label={`API klíč pro ${group.name}`}
+                />
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() =>
+                    setRevealed((prev) => ({ ...prev, [group.keyId]: !prev[group.keyId] }))
+                  }
+                  aria-label={revealed[group.keyId] ? "Skrýt klíč" : "Zobrazit klíč"}
+                >
+                  {revealed[group.keyId] ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => save(group)}
+                disabled={!draft.trim() || busyLabel !== undefined}
+              >
+                {busyLabel === "save" ? (
+                  <Loader size={14} className="spin" />
+                ) : (
+                  <KeyRound size={14} />
+                )}
+                Uložit
+              </button>
+
+              {group.configured && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setDrafts((prev) => ({ ...prev, [group.keyId]: "" }));
+                    setEdit(group.keyId, false);
+                  }}
+                  disabled={busyLabel !== undefined}
+                >
+                  Zrušit
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <span className="key-stored">
+                <CircleCheck size={14} />
+                Klíč je uložený (šifrovaně)
+              </span>
+              <span className="spacer" />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => test(group)}
+                disabled={busyLabel !== undefined}
+              >
+                {busyLabel === "test" && <Loader size={14} className="spin" />}
+                Otestovat
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setEdit(group.keyId, true)}
+                disabled={busyLabel !== undefined}
+              >
+                Změnit klíč
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => remove(group)}
+                disabled={busyLabel !== undefined}
+              >
+                {busyLabel === "delete" && <Loader size={14} className="spin" />}
+                Smazat klíč
+              </button>
+            </>
+          )}
+        </div>
+
+        {prefixMismatch && (
+          <div className="provider-result warn">
+            <TriangleAlert size={14} />
+            <span>
+              Klíče tohoto providera obvykle začínají na <code>{prefix}</code>. Uložit to
+              můžeš i tak — test ukáže, jestli funguje.
+            </span>
+          </div>
+        )}
+
+        {result && (
+          <div className={`provider-result ${result.kind}`}>
+            {result.kind === "ok" && <CircleCheck size={14} />}
+            {result.kind === "warn" && <TriangleAlert size={14} />}
+            {result.kind === "err" && <CircleX size={14} />}
+            <span>{result.text}</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="modal-scrim" onClick={onClose}>
       <div
@@ -344,6 +532,32 @@ export function ProvidersModal({
         </div>
 
         <div className="modal-body">
+          <section className="settings-section key-section" aria-labelledby="keys-answer-title">
+            <h3 id="keys-answer-title">
+              Modely na odpovědi
+              <span className={`key-count${answeringReady < minSlots ? " short" : ""}`}>
+                {answeringReady < minSlots
+                  ? `${answeringReady} ze ${minSlots} potřebných`
+                  : `${answeringReady} připojeno`}
+              </span>
+            </h3>
+            <p className="key-section-hint">
+              Refrakt odpovídá, až tu budou aspoň {minSlots} — když jeden provider selže, přepne
+              na další.
+            </p>
+            {answering.map(renderCard)}
+          </section>
+
+          <section className="settings-section key-section" aria-labelledby="keys-search-title">
+            <h3 id="keys-search-title">Hledání na webu</h3>
+            <p className="key-section-hint">
+              Nepovinné. Bez nich Refrakt hledá jen na arXivu a ve Wikipedii.
+            </p>
+            {searching.map(renderCard)}
+          </section>
+
+          <LocalModelSection onChanged={onChanged} />
+
           {auth && <AccountSection auth={auth} onChanged={onAuthChanged} />}
 
           <section className="settings-section">
@@ -567,186 +781,6 @@ export function ProvidersModal({
             )}
           </section>
 
-          <LocalModelSection onChanged={onChanged} />
-
-          {groups.map((group) => {
-            const draft = drafts[group.keyId] ?? "";
-            const prefix = group.primary.key_prefix;
-            const prefixMismatch = draft.length > 3 && prefix !== "" && !draft.startsWith(prefix);
-            const busyLabel = busy[group.keyId];
-            const result = results[group.keyId];
-            // Once a key is stored there is nothing to type, so the field goes
-            // away until "Změnit klíč" — or until the key is deleted.
-            const showInput = !group.configured || editing[group.keyId] === true;
-
-            return (
-              <div
-                key={group.keyId}
-                className={`provider-card${group.configured ? " configured" : ""}`}
-              >
-                <div className="provider-head">
-                  <ProviderMark id={group.primary.id} name={group.name} />
-                  <span className="provider-name">{group.name}</span>
-                  <span className="provider-dot" aria-hidden="true" />
-                  <span className="provider-state">
-                    {group.configured ? "Nastaveno" : "Chybí klíč"}
-                  </span>
-                  <span className="spacer" />
-                  <span className={`chip${group.requiresCard ? " warn" : ""}`}>
-                    {group.requiresCard ? "vyžaduje kartu" : "bez karty"}
-                  </span>
-                </div>
-
-                <ul className="provider-models">
-                  {group.models.map((model) => (
-                    <li key={model} className="model-pill">
-                      {model}
-                    </li>
-                  ))}
-                </ul>
-
-                {group.notes.length > 0 && <p className="provider-meta">{group.notes.join(" ")}</p>}
-
-                <div className="provider-tags">
-                  {group.capabilities.map((c) => (
-                    <span key={c} className="chip">
-                      {CAPABILITY_LABELS[c] ?? c}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="key-row">
-                  {showInput ? (
-                    <>
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        onClick={() => openSignupPage(group.primary)}
-                        title={group.primary.signup_url}
-                      >
-                        <ExternalLink size={14} />
-                        Otevřít stránku s klíčem
-                      </button>
-
-                      <div className="key-input">
-                        <input
-                          type={revealed[group.keyId] ? "text" : "password"}
-                          value={draft}
-                          autoFocus={editing[group.keyId]}
-                          onChange={(e) =>
-                            setDrafts((prev) => ({ ...prev, [group.keyId]: e.target.value }))
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && draft.trim()) save(group);
-                            if (e.key === "Escape" && group.configured) {
-                              e.stopPropagation(); // cancel the edit, don't close the dialog
-                              setDrafts((prev) => ({ ...prev, [group.keyId]: "" }));
-                              setEdit(group.keyId, false);
-                            }
-                          }}
-                          placeholder={prefix ? `${prefix}…` : "Vlož API klíč"}
-                          autoComplete="off"
-                          spellCheck={false}
-                          aria-label={`API klíč pro ${group.name}`}
-                        />
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          onClick={() =>
-                            setRevealed((prev) => ({ ...prev, [group.keyId]: !prev[group.keyId] }))
-                          }
-                          aria-label={revealed[group.keyId] ? "Skrýt klíč" : "Zobrazit klíč"}
-                        >
-                          {revealed[group.keyId] ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => save(group)}
-                        disabled={!draft.trim() || busyLabel !== undefined}
-                      >
-                        {busyLabel === "save" ? (
-                          <Loader size={14} className="spin" />
-                        ) : (
-                          <KeyRound size={14} />
-                        )}
-                        Uložit
-                      </button>
-
-                      {group.configured && (
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() => {
-                            setDrafts((prev) => ({ ...prev, [group.keyId]: "" }));
-                            setEdit(group.keyId, false);
-                          }}
-                          disabled={busyLabel !== undefined}
-                        >
-                          Zrušit
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <span className="key-stored">
-                        <CircleCheck size={14} />
-                        Klíč uložený v Credential Manageru
-                      </span>
-                      <span className="spacer" />
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => test(group)}
-                        disabled={busyLabel !== undefined}
-                      >
-                        {busyLabel === "test" && <Loader size={14} className="spin" />}
-                        Otestovat
-                      </button>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => setEdit(group.keyId, true)}
-                        disabled={busyLabel !== undefined}
-                      >
-                        Změnit klíč
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-danger"
-                        onClick={() => remove(group)}
-                        disabled={busyLabel !== undefined}
-                      >
-                        {busyLabel === "delete" && <Loader size={14} className="spin" />}
-                        Smazat klíč
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                {prefixMismatch && (
-                  <div className="provider-result warn">
-                    <TriangleAlert size={14} />
-                    <span>
-                      Klíče tohoto providera obvykle začínají na <code>{prefix}</code>. Uložit to
-                      můžeš i tak — test ukáže, jestli funguje.
-                    </span>
-                  </div>
-                )}
-
-                {result && (
-                  <div className={`provider-result ${result.kind}`}>
-                    {result.kind === "ok" && <CircleCheck size={14} />}
-                    {result.kind === "warn" && <TriangleAlert size={14} />}
-                    {result.kind === "err" && <CircleX size={14} />}
-                    <span>{result.text}</span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
         </div>
       </div>
     </div>

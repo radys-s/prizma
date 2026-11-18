@@ -3408,6 +3408,36 @@ button.conversation-item:focus-visible {
   gap: 10px;
 }
 
+/* Klíče jsou první věc v dialogu: bez dvou na odpovědi appka mlčí. Karty
+   v sekci si drží stejný rozestup jako dřív přímo v těle dialogu. */
+.key-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.key-section h3 {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.key-count {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.key-count.short {
+  color: var(--warning);
+}
+
+.key-section-hint {
+  margin: -4px 0 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 /* ---------------------------------------------------- karty providerů ---- */
 
 /* Osmnáct těchhle karet leží pod sebou v jednom scrollu, takže je karta
