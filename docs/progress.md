@@ -88,11 +88,11 @@ RCE v Next.js. Projekt prošel `npm audit` / OSV auditem a zranitelné závislos
 **Written up, not changed:** the owner-claim lockout, `/email/resend` abuse, the `X-Forwarded-For` trust on Render, TOTP reuse, GCM without associated data, and smaller notes (see the report). Secrets scan: gitleaks found nothing in the full history, so no key needs rotating.
 
 **Numbers**
-- Backend tests: 182 → 213 (31 new, each seen failing first). CI is green on every PR.
+- Backend tests: 182 → 216 (34 new, each seen failing first). CI is green on every PR.
 - `npm audit --omit=dev`: 0. `pip-audit`: 1 (litellm, fixed).
 - gitleaks: 94 commits from a GitHub mirror (every branch and PR ref) plus 9 commits only in hub2's clone, 0 findings.
 
-**Review:** a second account reviewed all six PRs read-only. It found two real bugs in my fixes: the first #20 returned 500 for a body that is not UTF-8 and echoed broken JSON back in the 422, and the first #22 opened the key file without `O_BINARY`, which on Windows corrupts about one new key in eight. Both were fixed and re-checked before merge, along with tightening old 0664 key files and raising the litellm floor in `pyproject.toml`.
+**Review:** a second account reviewed all six PRs read-only, and a re-check covered the follow-up commits. They found real bugs in my fixes. The first #20 returned 500 for a body that is not UTF-8 and echoed broken JSON back; the re-check then found a 500 for very deep nesting and the body still echoed in schema errors. The first #22 opened the key file without `O_BINARY`, which on Windows corrupts about one new key in eight. All were fixed and tested before merge. Old 0664 key files are now tightened on read, and the litellm floor in `pyproject.toml` was raised.
 
 **What worked:** calling the app at the ASGI level showed exactly whether the body was read before the token check. A fake OpenAI-compatible server on loopback let me check the litellm bump through the real HTTP path on both versions without any keys.
 
