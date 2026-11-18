@@ -26,6 +26,15 @@ export interface LimitNoticeItem {
   until: number | null;
 }
 
+/**
+ * Oznámení bez těch, která vyvolal jeden běh. Když běh skončí tím, že
+ * neodpověděl nikdo, bublina s chybou vyjmenuje tytéž limity i s časem —
+ * karty navíc by jen ležely přes ni.
+ */
+export function withoutNotices(items: LimitNoticeItem[], ids: Set<string>): LimitNoticeItem[] {
+  return items.filter((item) => !ids.has(item.id));
+}
+
 /** Kolik zbývá, řečeno tak, jak by to řekl člověk. */
 function remaining(until: number | null, now: number): string {
   if (until === null) return "";
@@ -78,9 +87,11 @@ function LimitCard({
           {item.provider}: vyčerpaný limit
         </strong>
         <span className="limit-detail">
+          {/* Jen to, co už platí: jestli odpoví jiný model, se v tuhle chvíli
+              ještě neví — a když ne, řekne to bublina s chybou. */}
           {left
-            ? `Zkusím ho znovu ${left}. Zatím odpovídá jiný model.`
-            : "Odpovídá jiný model. Provider neřekl, na jak dlouho."}
+            ? `Router ho přeskakuje, znovu ho zkusí ${left}.`
+            : "Router ho přeskakuje. Provider neřekl, na jak dlouho."}
         </span>
         {item.model && <span className="limit-model">{item.model}</span>}
       </div>

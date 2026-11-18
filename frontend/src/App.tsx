@@ -6,7 +6,7 @@ import { Composer, type ComposerHandle } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
 import { RefraktMark } from "./components/Logo";
 import { answeringSlots } from "./lib/keys";
-import { LimitToasts, type LimitNoticeItem } from "./components/LimitToast";
+import { LimitToasts, withoutNotices, type LimitNoticeItem } from "./components/LimitToast";
 import { LoginScreen } from "./components/LoginScreen";
 import { Message } from "./components/Message";
 import { ProvidersModal } from "./components/ProvidersModal";
@@ -538,6 +538,8 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
    */
   const makeHandlers = (runId: number): StreamHandlers => {
   const stale = () => runIdRef.current !== runId;
+  // Limit notices this run raised — see `withoutNotices`.
+  const raisedLimits = new Set<string>();
   return {
     onStart: (conversationId, _capability, userMessageId) => {
       if (stale()) return;
@@ -776,8 +778,9 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     // Zahodit ho jen proto, že uživatel mezitím poslal další zprávu, by
     // znamenalo zamlčet přesně tu informaci, kvůli které se oznámení dělalo.
     onLimit: (notice) => {
+      const id = `${notice.provider}:${notice.model}`;
+      raisedLimits.add(id);
       setLimits((prev) => {
-        const id = `${notice.provider}:${notice.model}`;
         const item: LimitNoticeItem = {
           id,
           provider: notice.provider,
@@ -811,6 +814,10 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           ? [...settled, { role: "assistant" as const, content: msg, error: true }]
           : patchLast(settled, (m) => ({ ...m, content: msg, error: true }));
       });
+      // "Nobody answered" lists every limit it hit, wait time included.
+      if (msg.startsWith("Žádný provider neodpověděl")) {
+        setLimits((prev) => withoutNotices(prev, raisedLimits));
+      }
       endStream();
     },
     // Not gated on `stale()`: a dead session is true no matter which run
