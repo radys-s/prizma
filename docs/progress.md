@@ -6,6 +6,7 @@
 |---|---|---|
 | 2026-10-27 | bidnej / bidnej/black-october | Bezpečnostní update závislostí po „Black October“ |
 | 2026-11-16 | tomas/* | Dokončení Refrakt jako key-holding gateway (PR #7–#11) |
+| 2026-11-18 | tomas/ux-* | UX pass: audit and five fixes (PR #13–#17) |
 
 ## 2026-10-27 — Bezpečnostní update závislostí (Black October)
 
@@ -39,4 +40,35 @@ RCE v Next.js. Projekt prošel `npm audit` / OSV auditem a zranitelné závislos
 - Na účtu OpenRouter upravit nastavení soukromí (`openrouter.ai/settings/privacy`), aby se odemkly zbývající bezplatné Nemotron modely.
 - Prozkoumat chování GitHub tokenu u GitHub Models (vrací 500).
 - V případě potřeby přidat platební kartu k Cerebras pro zprovoznění jejich `gpt-oss-120b`.
+
+## 2026-11-18 — UX pass: audit and five fixes (PR #13–#17)
+
+**What and why:** goal was "clearly better for a real person", measured in steps, errors and screen clarity, not features. I walked the app as a new and a returning user on hub2: my own backend on :8020, a fresh DB, and a stub OpenAI-compatible provider that can answer, return 429/401/500, or go down. Journeys: account setup, adding keys, chat, model/effort, conversation menu, rate-limited and failing providers, 360 px, dark mode. Then I fixed the top items that were small or medium.
+
+**Changes**
+- **#13 Key dialog opens on the answering keys.** "API klíče" opened on account settings. The first key card was 2,302 px down and the second answering model 4,130 px down, behind seven search-only cards. Now answering keys come first with a "1 ze 2 potřebných" count and search keys get their own optional section. The header and sidebar counters count answering keys only, as the router does; before, a search key hid the "need two" banner while chat still failed. The keyless Wikipedia card shows as always on, environment keys say so, and the stale "Credential Manager" line is gone.
+- **#14 Failed answers say what to do next.** "Žádný provider neodpověděl" rendered as one run-on line and stopped there. Now it keeps one failure per line, ends with "Co s tím: …" (fix the rejected key; wait only when every failure was temporary; otherwise add another provider's key), and offers an "API klíče" button.
+- **#15 Limit toasts stop claiming another model answers.** The toasts said "Odpovídá jiný model" even when none did, and covered the Send button. Now they say "Router ho přeskakuje…", sit under the top bar, hide after 12 s, and are dropped when the whole turn fails (the error bubble already lists the limits).
+- **#16 Touch targets reach 44 px on phones.** Send was 34 px, effort segments 24, pickers 30, key chip 24, icon buttons 40. Under `hover: none` they are now 44 or more; the exceptions are the code-block "Kopírovat" (about 39, clipped by the block) and "Proč tenhle model?" (42). Rows that sit close together get real height, not overlapping hit areas.
+- **#17 Login code submits on the sixth digit.** Removes the extra click on every e-mail/TOTP sign-in. After a wrong code the cursor returns to the first box; before, it was lost, which closed the phone keyboard.
+
+**Numbers**
+- First key card: 2,302 → 71 px from the top of the dialog. Second answering model: 4,130 → 296 px.
+- From a key error to the key dialog: sidebar + click + scroll → 1 click.
+- Sign-in code screen: 6 digits + click → 6 digits.
+- Phone controls under 44 px: about 15 → 2 (code-block "Kopírovat" about 39, "Proč tenhle model?" 42).
+- Tests: frontend 20 → 38, backend 177 → 183. Each new test was written to fail first. The one exception, the timeout-wording test from a review nit, was added together with its fix.
+
+**Review:** a second Claude account reviewed every PR read-only. It found answering-key counters that disagreed with the router, a "wait" hint shown for errors that waiting cannot fix, countdown toasts that could stay up for an hour, chip hit areas overlapping a wrapping row, focus lost after a wrong code, and a tautological test. All were fixed before merge.
+
+**Verified on merged main** (my own instance on :8020): first key card 71 px down, "2 připojené", chip "2/10". A 429 + 401 turn gives one bubble with "Co s tím" and no toasts, and its "API klíče" button opens the dialog.
+
+**What worked:** a stub provider with per-provider modes (`{"groq":"429"}`) made every error journey reproducible without real keys. Serving the built frontend from my own backend kept a single origin and never touched the live instance.
+
+**Next ideas (not done)**
+1. Locally, without `RESEND_API_KEY`, the sign-in code goes to the server console while the UI says it was e-mailed, so a new local user is stuck. The backend could report the delivery channel and the UI could say "kód je v okně serveru" (M).
+2. On first start, the no-keys banner overlaps the tip and the search-key notice shows even with zero answering keys. Show one notice at a time (S).
+3. Escape does not cancel the inline "Smazat …?" confirmation in the sidebar; it stays armed until clicked (S).
+4. A failed answer is not saved, so after a reload the question stands unanswered with no error and no retry (M; check `chat.py` persistence first).
+5. "Server neodpovídá … uvicorn na portu 8000" hard-codes the port even when the app is served elsewhere (S).
 
