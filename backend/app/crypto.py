@@ -91,7 +91,16 @@ def _local_key() -> bytes:
 
     key = os.urandom(KEY_BYTES)
     LOCAL_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    LOCAL_KEY_PATH.write_bytes(key)
+    # Owner-only, instead of whatever the umask allows (0644 or 0664 on most
+    # systems: readable by every account on the machine). `O_EXCL` because a
+    # second process starting at the same moment must not replace a key the
+    # first one may already have encrypted with — the file that exists wins.
+    try:
+        fd = os.open(LOCAL_KEY_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return _local_key()
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(key)
     return key
 
 
