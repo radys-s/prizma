@@ -64,3 +64,13 @@ def test_a_retired_model_does_not_say_wait():
     last = _summarize([gone]).strip().splitlines()[-1]
     assert "za chvíli" not in last
     assert "API klíče" in last
+
+
+def test_timeouts_alone_do_not_blame_limits():
+    slow = _attempt(
+        "groq",
+        litellm.Timeout(message="slow", llm_provider="groq", model="m"),
+    )
+    last = _summarize([slow]).strip().splitlines()[-1]
+    assert "za chvíli" in last
+    assert "limity" not in last

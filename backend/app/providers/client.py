@@ -147,6 +147,8 @@ def _summarize(attempts: list[Attempt]) -> str:
     if not attempts:
         return "Nepodařilo se získat odpověď od žádného providera."
     lines = "\n".join(f"- {_humanize(a)}" for a in attempts)
+    # The frontend matches this opening sentence (`App.tsx`, `onError`) to drop
+    # the limit toasts this bubble already lists — reword both together.
     return f"Žádný provider neodpověděl.\n\n{lines}\n\n{_next_step(attempts)}"
 
 
@@ -171,8 +173,14 @@ def _next_step(attempts: list[Attempt]) -> str:
     # overload, a dropped connection. A retired model or a card-only account
     # stays that way, so those get pointed at another provider instead.
     if all(isinstance(a.error, _TRANSIENT) for a in attempts):
+        # Only claim limits when one was actually hit; a timeout is not a quota.
+        why = (
+            " — limity free tierů se obnovují"
+            if any(isinstance(a.error, litellm.RateLimitError) for a in attempts)
+            else ""
+        )
         return (
-            "Co s tím: zkus to za chvíli znovu — limity free tierů se obnovují. "
+            f"Co s tím: zkus to za chvíli znovu{why}. "
             "Klíč dalšího providera v „API klíče“ dá routeru kam uhnout."
         )
     return "Co s tím: přidej v „API klíče“ klíč dalšího providera, ať má router kam uhnout."
