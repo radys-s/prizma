@@ -83,6 +83,7 @@ def _local_key() -> bytes:
     if LOCAL_KEY_PATH.exists():
         key = LOCAL_KEY_PATH.read_bytes()
         if len(key) == KEY_BYTES:
+            _owner_only(LOCAL_KEY_PATH)
             return key
         raise CryptoError(
             f"{LOCAL_KEY_PATH} je poškozený ({len(key)} B místo {KEY_BYTES}). "
@@ -91,8 +92,30 @@ def _local_key() -> bytes:
 
     key = os.urandom(KEY_BYTES)
     LOCAL_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    LOCAL_KEY_PATH.write_bytes(key)
+    # Owner-only, instead of whatever the umask allows (0644 or 0664 on most
+    # systems: readable by every account on the machine). `O_EXCL` because a
+    # second process starting at the same moment must not replace a key the
+    # first one may already have encrypted with — the file that exists wins.
+    # `O_BINARY` (Windows only): without it every 0x0A byte is written as CR LF.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    try:
+        fd = os.open(LOCAL_KEY_PATH, flags, 0o600)
+    except FileExistsError:
+        return _local_key()
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(key)
     return key
+
+
+def _owner_only(path) -> None:
+    """Tighten a key file that an older version created readable by others."""
+    if os.name != "posix":
+        return
+    try:
+        if path.stat().st_mode & 0o077:
+            path.chmod(0o600)
+    except OSError:
+        pass  # another owner or a read-only mount: the key still has to load
 
 
 def _from_base64(raw: str) -> bytes | None:
