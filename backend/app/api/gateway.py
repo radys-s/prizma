@@ -24,8 +24,9 @@ from collections.abc import AsyncIterator
 
 import litellm
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.auth.guard import LOOPBACK_HOSTS
 from app.config import settings
@@ -166,8 +167,48 @@ async def _sse(provider: ProviderModel, slug: str, first, rest) -> AsyncIterator
     yield "data: [DONE]\n\n"
 
 
+async def _read_body(request: Request) -> ChatRequest:
+    """The request body, validated as FastAPI would have done it.
+
+    Read here instead of declared as a parameter: FastAPI reads and parses a
+    declared body *before* the router's `require_token` runs, and nothing caps
+    the size of a `/v1` body, so a caller without the token could make this
+    process buffer and parse as much JSON as it cared to send. With no body
+    parameter the token is checked first.
+
+    No error repeats what was sent. Pydantic puts the offending value in each
+    error's `input` — the whole body, when it does not parse or lacks `model` —
+    and echoing it back cost a copy of the body per bad request, and a 500
+    whenever it held bytes or a lone surrogate that cannot be encoded.
+    """
+    try:
+        data = json.loads(await request.body())
+    # ValueError: not JSON, or bytes that are not text at all. RecursionError:
+    # nesting too deep for the parser, which `json` does not count as invalid.
+    except (ValueError, RecursionError) as exc:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "json_invalid",
+                    "loc": ("body", getattr(exc, "pos", 0)),
+                    "msg": "JSON decode error",
+                    "input": {},
+                    "ctx": {"error": getattr(exc, "msg", type(exc).__name__)},
+                }
+            ]
+        ) from exc
+    try:
+        return ChatRequest.model_validate(data)
+    except ValidationError as exc:
+        errors = exc.errors(include_url=False)
+        raise RequestValidationError(
+            [{**e, "loc": ("body", *e["loc"]), "input": {}} for e in errors]
+        ) from exc
+
+
 @router.post("/chat/completions")
-async def chat_completions(body: ChatRequest):
+async def chat_completions(request: Request):
+    body = await _read_body(request)
     targets = _targets(body.model)
     if not targets:
         return _error(404, f"Model {body.model!r} is not configured here")
