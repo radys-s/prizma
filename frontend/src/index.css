@@ -4795,11 +4795,55 @@ kbd.mono {
     opacity: 0.75;
   }
 
-  /* 30px is a comfortable mouse target and a poor thumb one. 40 with 4px
-     between them clears the gap where a tap lands on the neighbour. */
-  .icon-btn {
-    width: 40px;
-    height: 40px;
+  /* 30px is a comfortable mouse target and a poor thumb one. 44 is the size
+     WCAG and both phone platforms ask for; 4px between them clears the gap
+     where a tap lands on the neighbour. */
+  .icon-btn,
+  .send-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Controls stacked with a few pixels between them — the composer's pickers
+     over the effort segments on a phone, the two buttons in the sidebar
+     footer — would overlap with invisible hit areas. They get the real height
+     instead; it costs a few pixels of layout. */
+  .picker-trigger,
+  .segments {
+    height: 44px;
+  }
+
+  .key-status-btn,
+  .account-trigger {
+    min-height: 44px;
+  }
+
+  /* The segments sit 3px inside their 44px track; reach its edges. */
+  .segment {
+    position: relative;
+  }
+
+  .segment::after {
+    content: "";
+    position: absolute;
+    inset: -3px 0;
+  }
+
+  /* Smaller standalone buttons keep their looks and get a taller invisible hit
+     area. Only on buttons: `.chip` is also a plain label, which must not grow a
+     hit area over whatever sits under it. */
+  button.chip,
+  .why-btn,
+  .copy-btn {
+    position: relative;
+  }
+
+  button.chip::after,
+  .why-btn::after,
+  .copy-btn::after {
+    content: "";
+    position: absolute;
+    inset: -10px 0;
   }
 
   .message-actions {
