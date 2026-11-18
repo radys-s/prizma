@@ -5,6 +5,7 @@ import { CompactDivider } from "./components/CompactDivider";
 import { Composer, type ComposerHandle } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
 import { RefraktMark } from "./components/Logo";
+import { answeringSlots } from "./lib/keys";
 import { LimitToasts, type LimitNoticeItem } from "./components/LimitToast";
 import { LoginScreen } from "./components/LoginScreen";
 import { Message } from "./components/Message";
@@ -436,11 +437,9 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     []
   );
 
-  const keySlots = useMemo(() => {
-    const total = new Set(providers.map((p) => p.key_id));
-    const configured = new Set(providers.filter((p) => p.configured).map((p) => p.key_id));
-    return { total: total.size, configured: configured.size };
-  }, [providers]);
+  // Answering keys only: a search key does not get the router past its
+  // minimum, so counting it hid the "need two" banner while chat still failed.
+  const keySlots = useMemo(() => answeringSlots(providers), [providers]);
 
   const providerNames = useMemo(
     () => Object.fromEntries(providers.map((p) => [p.id, p.display_name])),
@@ -1150,6 +1149,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
                         providerNames={providerNames}
                         onRegenerate={retryable && !m.error ? regenerateLast : undefined}
                         onRetry={retryable && m.error ? regenerateLast : undefined}
+                        onOpenKeys={m.error ? openSettings : undefined}
                         onEdit={
                           m.role === "user" && m.id != null && !streaming && currentId !== null
                             ? editMessageAt
@@ -1234,6 +1234,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           onClose={() => setSettingsOpen(false)}
           auth={auth}
           onAuthChanged={onAuthChanged}
+          minSlots={minSlots}
           onChanged={() => {
             // A key change moves both lists: what's configured, and what the
             // model picker is allowed to offer.
