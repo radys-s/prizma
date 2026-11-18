@@ -282,3 +282,79 @@ def test_a_reasoning_model_litellm_does_not_know_still_gets_room():
 
     assert _reasons("zai/glm-4.5-flash")
     assert not _reasons("mistral/codestral-latest")
+
+
+# ------------------------------------------------- the body waits for the token
+
+
+def _post_counting_reads(headers: dict[str, str]) -> tuple[int, int]:
+    """One POST to the gateway at the ASGI level. -> (status, body reads).
+
+    Below the test client on purpose: what matters is whether the app asks for
+    the body at all, which only the ASGI `receive` callable can tell.
+    """
+    import asyncio
+
+    from app.main import app
+
+    body = b'{"model": "auto", "messages": [{"role": "user", "content": "hi"}]}'
+    reads = 0
+    status = 0
+
+    async def receive():
+        nonlocal reads
+        reads += 1
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    async def send(message):
+        nonlocal status
+        if message["type"] == "http.response.start":
+            status = message["status"]
+
+    raw = [(b"host", b"testserver"), (b"content-type", b"application/json")]
+    raw.append((b"content-length", str(len(body)).encode()))
+    raw.extend((k.lower().encode(), v.encode()) for k, v in headers.items())
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "https",
+        "path": "/v1/chat/completions",
+        "raw_path": b"/v1/chat/completions",
+        "root_path": "",
+        "query_string": b"",
+        "headers": raw,
+        "client": ("203.0.113.9", 40000),
+        "server": ("testserver", 443),
+    }
+    asyncio.run(app(scope, receive, send))
+    return status, reads
+
+
+def test_a_caller_without_the_token_never_gets_its_body_read(gateway):
+    """FastAPI parses a declared body before the router's `require_token` runs,
+    and nothing caps a `/v1` body, so anyone could make the process buffer and
+    parse as much JSON as they cared to send before hearing 401."""
+    assert _post_counting_reads({}) == (401, 0)
+    assert _post_counting_reads({"Authorization": "Bearer nope"}) == (401, 0)
+
+
+def test_with_no_token_configured_the_body_is_not_read_either(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "gateway_token", "")
+    assert _post_counting_reads(AUTH) == (404, 0)
+
+
+def test_an_invalid_body_is_still_a_422(client, gateway):
+    r = client.post("/v1/chat/completions", headers=AUTH, json={"messages": []})
+    assert r.status_code == 422
+    assert r.json()["detail"][0]["loc"] == ["body", "model"]
+
+    broken = client.post(
+        "/v1/chat/completions",
+        headers={**AUTH, "Content-Type": "application/json"},
+        content=b"{not json",
+    )
+    assert broken.status_code == 422

@@ -24,8 +24,9 @@ from collections.abc import AsyncIterator
 
 import litellm
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.auth.guard import LOOPBACK_HOSTS
 from app.config import settings
@@ -166,8 +167,25 @@ async def _sse(provider: ProviderModel, slug: str, first, rest) -> AsyncIterator
     yield "data: [DONE]\n\n"
 
 
+async def _read_body(request: Request) -> ChatRequest:
+    """The request body, validated as FastAPI would have done it.
+
+    Read here instead of declared as a parameter: FastAPI reads and parses a
+    declared body *before* the router's `require_token` runs, and nothing caps
+    the size of a `/v1` body, so a caller without the token could make this
+    process buffer and parse as much JSON as it cared to send. With no body
+    parameter the token is checked first.
+    """
+    try:
+        return ChatRequest.model_validate_json(await request.body())
+    except ValidationError as exc:
+        errors = exc.errors(include_url=False)
+        raise RequestValidationError([{**e, "loc": ("body", *e["loc"])} for e in errors]) from exc
+
+
 @router.post("/chat/completions")
-async def chat_completions(body: ChatRequest):
+async def chat_completions(request: Request):
+    body = await _read_body(request)
     targets = _targets(body.model)
     if not targets:
         return _error(404, f"Model {body.model!r} is not configured here")
