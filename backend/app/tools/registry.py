@@ -317,7 +317,7 @@ def _list_dir(args: dict) -> str:
         raise sandbox.Denied(f"{path} není složka.")
     lines = []
     for entry in sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
-        if entry.name.lower() in sandbox.DENIED_DIRS or entry.name.lower() in sandbox.DENIED_NAMES:
+        if entry.name.lower() in sandbox.DENIED_DIRS or sandbox.secret_name(entry.name):
             continue
         if entry.is_dir():
             lines.append(f"{entry.name}/")

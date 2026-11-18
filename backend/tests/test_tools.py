@@ -51,6 +51,38 @@ def test_secrets_are_denied_even_inside_the_root(root, name):
         sandbox.resolve(str(secret))
 
 
+@pytest.mark.parametrize(
+    "name",
+    [".env.development", ".env.development.local", ".env.test", ".env.staging", ".envrc", "id_ed25519", "id_ecdsa"],
+)
+def test_the_rest_of_the_secret_families_is_denied_too(root, name):
+    """The list named `.env`, `.env.local`, `.env.production` and `id_rsa`
+    exactly, so `.env.development.local` (where Next.js and Vite projects keep
+    their keys) or an ed25519 SSH key went to the provider like any text file."""
+    secret = root / name
+    secret.write_text("API_KEY=abc", encoding="utf-8")
+    with pytest.raises(sandbox.Denied):
+        sandbox.resolve(str(secret))
+    assert sandbox.denied(secret)
+
+
+@pytest.mark.parametrize("name", [".env.example", ".env.sample", ".env.template"])
+def test_env_templates_stay_readable(root, name):
+    template = root / name
+    template.write_text("API_KEY=", encoding="utf-8")
+    assert sandbox.resolve(str(template)) == template
+
+
+def test_search_skips_env_variants(root):
+    (root / ".env.development.local").write_text("API_KEY=abc", encoding="utf-8")
+    (root / "settings.py").write_text("API_KEY = os.environ['API_KEY']", encoding="utf-8")
+
+    found = registry._search_text({"path": str(root), "pattern": "API_KEY"})
+
+    assert "settings.py" in found
+    assert ".env.development.local" not in found
+
+
 @pytest.mark.parametrize("folder", [".git", "node_modules", ".venv"])
 def test_closed_folders_are_denied(root, folder):
     inside = root / folder / "config"
