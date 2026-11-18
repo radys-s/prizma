@@ -1504,6 +1504,9 @@ button.conversation-item:focus-visible {
 .message-error-text {
   flex: 1;
   min-width: 0;
+  /* The backend sends one failure per line and the next step after a blank
+     line; collapsed, it read as one run-on sentence. */
+  white-space: pre-line;
 }
 
 /* Full-width row under the text, indented past the icon, so the button has
@@ -1511,6 +1514,9 @@ button.conversation-item:focus-visible {
 .message-error-actions {
   flex-basis: 100%;
   padding-left: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* Vidět pořád, jen tlumeně. Skryté na hover to znamenalo, že kdo neví, že tam
@@ -3408,6 +3414,36 @@ button.conversation-item:focus-visible {
   gap: 10px;
 }
 
+/* Klíče jsou první věc v dialogu: bez dvou na odpovědi appka mlčí. Karty
+   v sekci si drží stejný rozestup jako dřív přímo v těle dialogu. */
+.key-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.key-section h3 {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.key-count {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.key-count.short {
+  color: var(--warning);
+}
+
+.key-section-hint {
+  margin: -4px 0 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 /* ---------------------------------------------------- karty providerů ---- */
 
 /* Osmnáct těchhle karet leží pod sebou v jednom scrollu, takže je karta
@@ -4656,10 +4692,12 @@ kbd.mono {
    tyhle jsou až tři a odcházejí samy, až doběhne odpočet. Sdílené by to
    znamenalo tři podmíněné modifikátory nad pravidlem, které mělo jednu práci. */
 
+/* Nahoře pod lištou, ne dole: dole ležel přes pravý kraj composeru i
+   s tlačítkem Odeslat, a dvě karty pod sebou zakryly i chybu, ke které patří. */
 .limit-stack {
   position: fixed;
   right: max(18px, env(safe-area-inset-right));
-  bottom: calc(18px + env(safe-area-inset-bottom));
+  top: calc(66px + env(safe-area-inset-top));
   z-index: 92; /* nad update-toast: tenhle mizí sám, ten druhý čeká na klik */
   display: flex;
   flex-direction: column;
@@ -4737,8 +4775,7 @@ kbd.mono {
   .limit-stack {
     right: max(12px, env(safe-area-inset-right));
     left: max(12px, env(safe-area-inset-left));
-    /* Nad composerem, ne přes něj: na telefonu je spodní pás celý jeho. */
-    bottom: calc(84px + env(safe-area-inset-bottom));
+    top: calc(56px + env(safe-area-inset-top));
   }
 
   .limit-toast {
@@ -4795,11 +4832,56 @@ kbd.mono {
     opacity: 0.75;
   }
 
-  /* 30px is a comfortable mouse target and a poor thumb one. 40 with 4px
-     between them clears the gap where a tap lands on the neighbour. */
-  .icon-btn {
-    width: 40px;
-    height: 40px;
+  /* 30px is a comfortable mouse target and a poor thumb one. 44 is the size
+     WCAG and both phone platforms ask for; 4px between them clears the gap
+     where a tap lands on the neighbour. */
+  .icon-btn,
+  .send-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Controls stacked with a few pixels between them — the composer's pickers
+     over the effort segments on a phone, the two buttons in the sidebar
+     footer — would overlap with invisible hit areas. They get the real height
+     instead; it costs a few pixels of layout. */
+  .picker-trigger,
+  .segments {
+    height: 44px;
+  }
+
+  .key-status-btn,
+  .account-trigger {
+    min-height: 44px;
+  }
+
+  /* The segments sit 3px inside their 44px track; reach its edges. */
+  .segment {
+    position: relative;
+  }
+
+  .segment::after {
+    content: "";
+    position: absolute;
+    inset: -3px 0;
+  }
+
+  /* Smaller standalone buttons keep their looks and get a taller invisible hit
+     area. Only the top-bar chips: elsewhere `.chip` is a label, or a button in
+     a wrapping row (the detected local models) where the hit area of one row
+     would reach into the chips above it. */
+  .topbar button.chip,
+  .why-btn,
+  .copy-btn {
+    position: relative;
+  }
+
+  .topbar button.chip::after,
+  .why-btn::after,
+  .copy-btn::after {
+    content: "";
+    position: absolute;
+    inset: -10px 0;
   }
 
   .message-actions {

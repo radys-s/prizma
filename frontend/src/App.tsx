@@ -5,7 +5,8 @@ import { CompactDivider } from "./components/CompactDivider";
 import { Composer, type ComposerHandle } from "./components/Composer";
 import { EmptyState } from "./components/EmptyState";
 import { RefraktMark } from "./components/Logo";
-import { LimitToasts, type LimitNoticeItem } from "./components/LimitToast";
+import { answeringSlots } from "./lib/keys";
+import { LimitToasts, withoutNotices, type LimitNoticeItem } from "./components/LimitToast";
 import { LoginScreen } from "./components/LoginScreen";
 import { Message } from "./components/Message";
 import { ProvidersModal } from "./components/ProvidersModal";
@@ -436,11 +437,9 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     []
   );
 
-  const keySlots = useMemo(() => {
-    const total = new Set(providers.map((p) => p.key_id));
-    const configured = new Set(providers.filter((p) => p.configured).map((p) => p.key_id));
-    return { total: total.size, configured: configured.size };
-  }, [providers]);
+  // Answering keys only: a search key does not get the router past its
+  // minimum, so counting it hid the "need two" banner while chat still failed.
+  const keySlots = useMemo(() => answeringSlots(providers), [providers]);
 
   const providerNames = useMemo(
     () => Object.fromEntries(providers.map((p) => [p.id, p.display_name])),
@@ -539,6 +538,8 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
    */
   const makeHandlers = (runId: number): StreamHandlers => {
   const stale = () => runIdRef.current !== runId;
+  // Limit notices this run raised — see `withoutNotices`.
+  const raisedLimits = new Set<string>();
   return {
     onStart: (conversationId, _capability, userMessageId) => {
       if (stale()) return;
@@ -777,8 +778,9 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
     // Zahodit ho jen proto, že uživatel mezitím poslal další zprávu, by
     // znamenalo zamlčet přesně tu informaci, kvůli které se oznámení dělalo.
     onLimit: (notice) => {
+      const id = `${notice.provider}:${notice.model}`;
+      raisedLimits.add(id);
       setLimits((prev) => {
-        const id = `${notice.provider}:${notice.model}`;
         const item: LimitNoticeItem = {
           id,
           provider: notice.provider,
@@ -812,6 +814,12 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           ? [...settled, { role: "assistant" as const, content: msg, error: true }]
           : patchLast(settled, (m) => ({ ...m, content: msg, error: true }));
       });
+      // "Nobody answered" lists every limit it hit, wait time included. The
+      // sentence is written by `_summarize` in backend/app/providers/client.py,
+      // which carries the matching note — reword both together.
+      if (msg.startsWith("Žádný provider neodpověděl")) {
+        setLimits((prev) => withoutNotices(prev, raisedLimits));
+      }
       endStream();
     },
     // Not gated on `stale()`: a dead session is true no matter which run
@@ -1150,6 +1158,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
                         providerNames={providerNames}
                         onRegenerate={retryable && !m.error ? regenerateLast : undefined}
                         onRetry={retryable && m.error ? regenerateLast : undefined}
+                        onOpenKeys={m.error ? openSettings : undefined}
                         onEdit={
                           m.role === "user" && m.id != null && !streaming && currentId !== null
                             ? editMessageAt
@@ -1234,6 +1243,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           onClose={() => setSettingsOpen(false)}
           auth={auth}
           onAuthChanged={onAuthChanged}
+          minSlots={minSlots}
           onChanged={() => {
             // A key change moves both lists: what's configured, and what the
             // model picker is allowed to offer.
