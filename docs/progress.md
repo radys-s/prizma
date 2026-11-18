@@ -46,8 +46,8 @@ RCE v Next.js. Projekt prošel `npm audit` / OSV auditem a zranitelné závislos
 **What and why:** goal was "clearly better for a real person", measured in steps, errors and screen clarity, not features. I walked the app as a new and a returning user on hub2: my own backend on :8020, a fresh DB, and a stub OpenAI-compatible provider that can answer, return 429/401/500, or go down. Journeys: account setup, adding keys, chat, model/effort, conversation menu, rate-limited and failing providers, 360 px, dark mode. Then I fixed the top items that were small or medium.
 
 **Changes**
-- **#13 Key dialog opens on the answering keys.** "API klíče" opened on account settings. The first key card was 2,302 px down and the second answering model 4,130 px down, behind seven search-only cards. Now answering keys come first with a "1 ze 2 potřebných" count and search keys get their own optional section. Also dropped the stale "Credential Manager" line.
-- **#14 Failed answers say what to do next.** "Žádný provider neodpověděl" rendered as one run-on line and stopped there. Now it keeps one failure per line, ends with "Co s tím: …" (fix the rejected key, or wait / add a key), and offers an "API klíče" button.
+- **#13 Key dialog opens on the answering keys.** "API klíče" opened on account settings. The first key card was 2,302 px down and the second answering model 4,130 px down, behind seven search-only cards. Now answering keys come first with a "1 ze 2 potřebných" count and search keys get their own optional section. The header and sidebar counters count answering keys only, as the router does; before, a search key hid the "need two" banner while chat still failed. The keyless Wikipedia card shows as always on, environment keys say so, and the stale "Credential Manager" line is gone.
+- **#14 Failed answers say what to do next.** "Žádný provider neodpověděl" rendered as one run-on line and stopped there. Now it keeps one failure per line, ends with "Co s tím: …" (fix the rejected key; wait only when every failure was temporary; otherwise add another provider's key), and offers an "API klíče" button.
 - **#15 Limit toasts stop claiming another model answers.** The toasts said "Odpovídá jiný model" even when none did, and covered the Send button. Now they say "Router ho přeskakuje…", sit under the top bar, and are dropped when the whole turn fails (the error bubble already lists the limits).
 - **#16 Touch targets reach 44 px on phones.** Send was 34 px, effort segments 24, pickers 30, key chip 24, icon buttons 40. All are now ≥ 44 under `hover: none`. Rows that sit close together get real height, not overlapping hit areas.
 - **#17 Login code submits on the sixth digit.** Removes the extra click on every e-mail/TOTP sign-in.
@@ -57,14 +57,16 @@ RCE v Next.js. Projekt prošel `npm audit` / OSV auditem a zranitelné závislos
 - From a key error to the key dialog: sidebar + click + scroll → 1 click.
 - Sign-in code screen: 6 digits + click → 6 digits.
 - Phone controls under 44 px: about 15 → 0 (only "Proč tenhle model?" is 42).
-- Tests: frontend 20 → 33, backend 177 → 180. All new tests failed before their fix.
+- Tests: frontend 20 → 36, backend 177 → 182. All new tests failed before their fix.
+
+**Review:** a second Claude account reviewed every PR read-only. It found answering-key counters that disagreed with the router, a "wait" hint shown for errors that waiting cannot fix, and a tautological test. All were fixed before merge.
 
 **What worked:** a stub provider with per-provider modes (`{"groq":"429"}`) made every error journey reproducible without real keys. Serving the built frontend from my own backend kept a single origin and never touched the live instance.
 
 **Next ideas (not done)**
 1. Locally, without `RESEND_API_KEY`, the sign-in code goes to the server console while the UI says it was e-mailed, so a new local user is stuck. The backend could report the delivery channel and the UI could say "kód je v okně serveru" (M).
 2. On first start, the no-keys banner overlaps the tip and the search-key notice shows even with zero answering keys. Show one notice at a time (S).
-3. The keyless "Wikipedia + arXiv" card shows "Chybí klíč", a key field, and counts towards "x/18". Expose `keyless` and render it as always on (S–M).
+3. Escape does not cancel the inline "Smazat …?" confirmation in the sidebar; it stays armed until clicked (S).
 4. A failed answer is not saved, so after a reload the question stands unanswered with no error and no retry (M; check `chat.py` persistence first).
 5. "Server neodpovídá … uvicorn na portu 8000" hard-codes the port even when the app is served elsewhere (S).
 
