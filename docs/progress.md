@@ -72,3 +72,28 @@ RCE v Next.js. Projekt prošel `npm audit` / OSV auditem a zranitelné závislos
 4. A failed answer is not saved, so after a reload the question stands unanswered with no error and no retry (M; check `chat.py` persistence first).
 5. "Server neodpovídá … uvicorn na portu 8000" hard-codes the port even when the app is served elsewhere (S).
 
+
+## 2026-11-18 — Security review: six fixes and a write-up (PR #19–#24)
+
+**What and why:** Tomáš asked for the real weaknesses to be found and fixed before anyone else finds them: Refrakt holds every provider key he has, and the repo is public. I checked the areas he listed: public-mode sign-in, the loopback guard, the `/v1` gateway, key storage, the local model, the frontend renderer, dependencies and git history. Everything ran on hub2 with a throwaway database and ports 8030/8031, without touching the live instance or using real keys. The full report, with file:line evidence, is in `docs/security-review-2026-11.md`.
+
+**Fixed (each with a test that fails on the old code)**
+- **#19 (High)** The e-mail password worked as the access code: an account created by e-mail registration kept the password in the legacy access-code column, so `/api/auth/login` signed in without the second factor. Before the account was claimed, anyone who knew `OWNER_EMAIL` could take a fresh deployment. Also fixes `scripts/set_passcode.py`, which called a function that does not exist.
+- **#20 (Medium)** `/v1/chat/completions` parsed bodies of any size before checking the token. One unauthenticated 50 MB request raised peak memory from 253 to 406 MB; after the fix it grows by 12 kB.
+- **#23 (Medium)** The file tools' secret denylist missed `.env.development.local` and the other `.env.*` variants, `.envrc`, and ed25519/ecdsa SSH keys.
+- **#21 (Low)** OIDC sign-in now uses the e-mail for claiming the account only when the provider marks it verified.
+- **#22 (Low)** A generated `master.key` is now 0600 (it was 0664) and is never overwritten by a second process.
+- **#24** litellm 1.98.0 → 1.100.4 for a high-rated advisory in the LiteLLM Proxy server, which Refrakt does not run. Nothing else in the lock changes.
+
+**Written up, not changed:** the owner-claim lockout, `/email/resend` abuse, the `X-Forwarded-For` trust on Render, TOTP reuse, GCM without associated data, and smaller notes (see the report). Secrets scan: gitleaks found nothing in the full history, so no key needs rotating.
+
+**Numbers**
+- Backend tests: 182 → 216 (34 new, each seen failing first). CI is green on every PR.
+- `npm audit --omit=dev`: 0. `pip-audit`: 1 (litellm, fixed).
+- gitleaks: 94 commits from a GitHub mirror (every branch and PR ref) plus 9 commits only in hub2's clone, 0 findings.
+
+**Review:** a second account reviewed all six PRs read-only, and a re-check covered the follow-up commits. They found real bugs in my fixes. The first #20 returned 500 for a body that is not UTF-8 and echoed broken JSON back; the re-check then found a 500 for very deep nesting and the body still echoed in schema errors. The first #22 opened the key file without `O_BINARY`, which on Windows corrupts about one new key in eight. All were fixed and tested before merge. Old 0664 key files are now tightened on read, and the litellm floor in `pyproject.toml` was raised.
+
+**What worked:** calling the app at the ASGI level showed exactly whether the body was read before the token check. A fake OpenAI-compatible server on loopback let me check the litellm bump through the real HTTP path on both versions without any keys.
+
+**Next:** the five Low items in the report need a decision from Tomáš. Also, `tests/test_tool_loop.py` fails when run on its own because it depends on state from other test files. That is not a security issue, but it is worth isolating.
