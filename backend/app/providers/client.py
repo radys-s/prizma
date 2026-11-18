@@ -158,13 +158,33 @@ def _next_step(attempts: list[Attempt]) -> str:
         for a in attempts
         if isinstance(a.error, litellm.AuthenticationError)
     ]
+    # The frontend offers an "API klíče" button when the text names the dialog
+    # as „API klíče“ (`components/Message.tsx`) — keep that wording in all three.
     if rejected:
-        names = ", ".join(dict.fromkeys(rejected))
-        return f"Co s tím: zkontroluj klíč ({names}) v „API klíče“ — tlačítko Otestovat řekne víc."
-    return (
-        "Co s tím: zkus to za chvíli znovu — limity free tierů se obnovují. "
-        "Klíč dalšího providera v „API klíče“ dá routeru kam uhnout."
-    )
+        names = list(dict.fromkeys(rejected))
+        noun = "klíč" if len(names) == 1 else "klíče"
+        return (
+            f"Co s tím: zkontroluj {noun} ({', '.join(names)}) v „API klíče“ — "
+            "tlačítko Otestovat řekne víc."
+        )
+    # Waiting only helps when something is temporarily out: a limit, an
+    # overload, a dropped connection. A retired model or a card-only account
+    # stays that way, so those get pointed at another provider instead.
+    if all(isinstance(a.error, _TRANSIENT) for a in attempts):
+        return (
+            "Co s tím: zkus to za chvíli znovu — limity free tierů se obnovují. "
+            "Klíč dalšího providera v „API klíče“ dá routeru kam uhnout."
+        )
+    return "Co s tím: přidej v „API klíče“ klíč dalšího providera, ať má router kam uhnout."
+
+
+_TRANSIENT = (
+    litellm.RateLimitError,
+    litellm.ServiceUnavailableError,
+    litellm.InternalServerError,
+    litellm.Timeout,
+    litellm.APIConnectionError,
+)
 
 
 def _supported_kwargs(model: str, **kwargs) -> dict:

@@ -49,3 +49,18 @@ def test_each_failure_stays_on_its_own_line():
     lines = text.splitlines()
     assert any(line.startswith("- Groq") for line in lines)
     assert any(line.startswith("- Cerebras") for line in lines)
+
+
+def test_several_rejected_keys_use_the_plural():
+    text = _summarize([_rejected("groq"), _rejected("cerebras")])
+    assert "klíče (Groq, Cerebras)" in text.strip().splitlines()[-1]
+
+
+def test_a_retired_model_does_not_say_wait():
+    gone = _attempt(
+        "groq",
+        litellm.NotFoundError(message="gone", llm_provider="groq", model="m"),
+    )
+    last = _summarize([gone]).strip().splitlines()[-1]
+    assert "za chvíli" not in last
+    assert "API klíče" in last

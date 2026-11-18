@@ -299,7 +299,9 @@ export const Message = memo(function Message({
 
   if (message.error) {
     // The backend ends a "nobody answered" error with its next step; when that
-    // step is the key dialog, the button saves the trip to the sidebar.
+    // step is the key dialog, the button saves the trip to the sidebar. The
+    // marker is the dialog's name as `backend/app/providers/client.py`
+    // (`_next_step`) and `routing/selector.py` write it — change it in both.
     const showKeys = onOpenKeys !== undefined && message.content.includes("„API klíče“");
     return (
       <div className="message">

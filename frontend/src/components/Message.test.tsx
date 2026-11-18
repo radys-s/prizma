@@ -34,10 +34,12 @@ describe("Message error bubble", () => {
     expect(screen.queryByRole("button", { name: "Otevřít API klíče" })).toBeNull();
   });
 
-  it("keeps one failure per line", () => {
+  // jsdom applies no CSS, so this pins the half it can see: the line breaks
+  // reach the element that `white-space: pre-line` styles.
+  it("keeps the backend's line breaks in the error text", () => {
     render(<Message message={FAILED} />);
     const text = document.querySelector(".message-error-text");
     expect(text?.textContent).toContain("\n- Groq");
-    expect(text?.className).toContain("message-error-text");
+    expect(text?.textContent).toContain("\n- Cerebras");
   });
 });
