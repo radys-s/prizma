@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
 from sqlmodel import Session
 
-from app.auth import core
+from app.auth import core, identities
 from app.db import engine, init_db
 from app.models.auth import AppUser
 
@@ -54,12 +54,18 @@ def apply(passcode: str) -> str:
             session.commit()
             return "Účet založen a kód nastaven."
 
-        user.password_hash = core.hash_passcode(passcode)
-        session.add(user)
-        session.commit()
-        session.refresh(user)
+        # Through the identity, not straight into `AppUser.password_hash`: the
+        # login reads the `local` identity first and ignores that column on an
+        # account that was created by e-mail registration.
+        identities.set_secret(
+            session,
+            user.id,
+            identities.LOCAL_PROVIDER,
+            identities.LOCAL_PROVIDER,
+            core.hash_passcode(passcode),
+        )
         # Starý kód už neplatí, takže ani session vydané pod ním nesmí přežít.
-        core.revoke_all_for_user(session, user.id)
+        core.revoke_others(session, user.id, None)
         return "Kód změněn, všechny přihlášené session odhlášeny."
 
 
