@@ -83,3 +83,32 @@ def test_a_key_another_process_wrote_first_is_kept(local_key, monkeypatch):
 
     assert crypto._master_key() == theirs
     assert local_key.read_bytes() == theirs
+
+
+def test_the_key_file_is_opened_in_binary_mode(local_key, monkeypatch):
+    """`os.open` defaults to text mode on Windows, which writes every 0x0A
+    byte of the key as CR LF: about one fresh install in eight would get a key
+    file longer than 32 bytes and lose every stored key at the next start."""
+    binary = 0x40000000  # stands in for os.O_BINARY, which only Windows has
+    monkeypatch.setattr(os, "O_BINARY", binary, raising=False)
+    seen: list[int] = []
+    real_open = os.open
+
+    def spy(path, flags, mode=0o777):
+        seen.append(flags)
+        return real_open(path, flags & ~binary, mode)
+
+    monkeypatch.setattr(crypto.os, "open", spy)
+    crypto._master_key()
+
+    assert seen and seen[0] & binary
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_a_key_file_an_older_version_left_readable_is_tightened(local_key):
+    key = os.urandom(crypto.KEY_BYTES)
+    local_key.write_bytes(key)
+    local_key.chmod(0o664)
+
+    assert crypto._master_key() == key
+    assert local_key.stat().st_mode & 0o777 == 0o600
