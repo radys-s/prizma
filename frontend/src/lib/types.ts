@@ -64,6 +64,10 @@ export interface Provider {
   /** Credential-store entry. Providers sharing one account key share this. */
   key_id: string;
   configured: boolean;
+  /** Works without any key (the Wikipedia + arXiv searcher). */
+  keyless?: boolean;
+  /** The key comes from a `PRIZMA_KEY_*` environment variable, not the database. */
+  from_env?: boolean;
 }
 
 /** What this machine can realistically run, as `/api/providers/local` reports it. */
