@@ -4866,15 +4866,16 @@ kbd.mono {
   }
 
   /* Smaller standalone buttons keep their looks and get a taller invisible hit
-     area. Only on buttons: `.chip` is also a plain label, which must not grow a
-     hit area over whatever sits under it. */
-  button.chip,
+     area. Only the top-bar chips: elsewhere `.chip` is a label, or a button in
+     a wrapping row (the detected local models) where the hit area of one row
+     would reach into the chips above it. */
+  .topbar button.chip,
   .why-btn,
   .copy-btn {
     position: relative;
   }
 
-  button.chip::after,
+  .topbar button.chip::after,
   .why-btn::after,
   .copy-btn::after {
     content: "";
