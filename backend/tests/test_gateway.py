@@ -378,3 +378,32 @@ def test_a_broken_body_is_not_echoed_back(client, gateway):
     )
     assert r.status_code == 422
     assert "x" * 100 not in r.text
+
+
+def test_deeply_nested_json_is_a_422_not_a_crash(client, gateway):
+    """`json.loads` raises RecursionError, not ValueError, past ~1000 levels."""
+    r = client.post(
+        "/v1/chat/completions",
+        headers={**AUTH, "Content-Type": "application/json"},
+        content=b"[" * 100_000,
+    )
+    assert r.status_code == 422
+
+
+def test_a_body_that_fails_the_schema_is_not_echoed_back(client, gateway):
+    """Pydantic puts the offending value in `input`; with `model` missing that
+    is the whole body."""
+    body = {"messages": [{"role": "user", "content": "x" * 5000}]}
+    r = client.post("/v1/chat/completions", headers=AUTH, json=body)
+    assert r.status_code == 422
+    assert "x" * 100 not in r.text
+
+
+def test_a_lone_surrogate_in_a_rejected_field_is_a_422(client, gateway):
+    """Echoed back, a lone surrogate cannot be encoded and the 422 became a 500."""
+    r = client.post(
+        "/v1/chat/completions",
+        headers={**AUTH, "Content-Type": "application/json"},
+        content=b'{"model": 1, "messages": "\\ud800"}',
+    )
+    assert r.status_code == 422

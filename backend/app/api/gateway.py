@@ -176,14 +176,16 @@ async def _read_body(request: Request) -> ChatRequest:
     process buffer and parse as much JSON as it cared to send. With no body
     parameter the token is checked first.
 
-    JSON is parsed first, apart from validation, for the same reason FastAPI
-    does it: a body that does not parse is reported without its content.
-    Pydantic's own JSON error would carry the whole raw body back in the 422,
-    and as bytes that are not UTF-8 it crashed the error handler into a 500.
+    No error repeats what was sent. Pydantic puts the offending value in each
+    error's `input` — the whole body, when it does not parse or lacks `model` —
+    and echoing it back cost a copy of the body per bad request, and a 500
+    whenever it held bytes or a lone surrogate that cannot be encoded.
     """
     try:
         data = json.loads(await request.body())
-    except ValueError as exc:  # JSONDecodeError, or bytes that are not text at all
+    # ValueError: not JSON, or bytes that are not text at all. RecursionError:
+    # nesting too deep for the parser, which `json` does not count as invalid.
+    except (ValueError, RecursionError) as exc:
         raise RequestValidationError(
             [
                 {
@@ -191,7 +193,7 @@ async def _read_body(request: Request) -> ChatRequest:
                     "loc": ("body", getattr(exc, "pos", 0)),
                     "msg": "JSON decode error",
                     "input": {},
-                    "ctx": {"error": getattr(exc, "msg", "not UTF-8")},
+                    "ctx": {"error": getattr(exc, "msg", type(exc).__name__)},
                 }
             ]
         ) from exc
@@ -199,7 +201,9 @@ async def _read_body(request: Request) -> ChatRequest:
         return ChatRequest.model_validate(data)
     except ValidationError as exc:
         errors = exc.errors(include_url=False)
-        raise RequestValidationError([{**e, "loc": ("body", *e["loc"])} for e in errors]) from exc
+        raise RequestValidationError(
+            [{**e, "loc": ("body", *e["loc"]), "input": {}} for e in errors]
+        ) from exc
 
 
 @router.post("/chat/completions")
