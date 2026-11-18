@@ -1150,6 +1150,7 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
                         providerNames={providerNames}
                         onRegenerate={retryable && !m.error ? regenerateLast : undefined}
                         onRetry={retryable && m.error ? regenerateLast : undefined}
+                        onOpenKeys={m.error ? openSettings : undefined}
                         onEdit={
                           m.role === "user" && m.id != null && !streaming && currentId !== null
                             ? editMessageAt

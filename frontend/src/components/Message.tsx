@@ -4,6 +4,7 @@ import {
   Copy,
   ExternalLink,
   Globe,
+  KeyRound,
   ListOrdered,
   Pencil,
   RefreshCw,
@@ -26,6 +27,8 @@ interface Props {
   onRegenerate?: () => void;
   /** Present only on a failed answer that is still the last thing in the thread. */
   onRetry?: () => void;
+  /** Opens the key dialog; offered on an error whose next step is a key. */
+  onOpenKeys?: () => void;
   /**
    * Rewrites this user message and re-runs the thread from here.
    *
@@ -197,6 +200,7 @@ export const Message = memo(function Message({
   message,
   onRegenerate,
   onRetry,
+  onOpenKeys,
   onEdit,
   editNonce,
   providerNames = {},
@@ -294,6 +298,9 @@ export const Message = memo(function Message({
   }
 
   if (message.error) {
+    // The backend ends a "nobody answered" error with its next step; when that
+    // step is the key dialog, the button saves the trip to the sidebar.
+    const showKeys = onOpenKeys !== undefined && message.content.includes("„API klíče“");
     return (
       <div className="message">
         <div className="message-error">
@@ -301,12 +308,25 @@ export const Message = memo(function Message({
           <div className="message-error-text">{message.content}</div>
           {/* The thread is intact behind this — a failed answer no longer
               deletes the one it was replacing — so retrying costs nothing. */}
-          {onRetry && (
+          {(onRetry || showKeys) && (
             <div className="message-error-actions">
-              <button type="button" className="btn" onClick={onRetry}>
-                <RefreshCw size={14} />
-                Zkusit znovu
-              </button>
+              {onRetry && (
+                <button type="button" className="btn" onClick={onRetry}>
+                  <RefreshCw size={14} />
+                  Zkusit znovu
+                </button>
+              )}
+              {showKeys && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={onOpenKeys}
+                  aria-label="Otevřít API klíče"
+                >
+                  <KeyRound size={14} />
+                  API klíče
+                </button>
+              )}
             </div>
           )}
         </div>

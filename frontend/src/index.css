@@ -1504,6 +1504,9 @@ button.conversation-item:focus-visible {
 .message-error-text {
   flex: 1;
   min-width: 0;
+  /* The backend sends one failure per line and the next step after a blank
+     line; collapsed, it read as one run-on sentence. */
+  white-space: pre-line;
 }
 
 /* Full-width row under the text, indented past the icon, so the button has
@@ -1511,6 +1514,9 @@ button.conversation-item:focus-visible {
 .message-error-actions {
   flex-basis: 100%;
   padding-left: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* Vidět pořád, jen tlumeně. Skryté na hover to znamenalo, že kdo neví, že tam

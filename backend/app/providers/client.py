@@ -147,7 +147,24 @@ def _summarize(attempts: list[Attempt]) -> str:
     if not attempts:
         return "Nepodařilo se získat odpověď od žádného providera."
     lines = "\n".join(f"- {_humanize(a)}" for a in attempts)
-    return f"Žádný provider neodpověděl.\n\n{lines}"
+    return f"Žádný provider neodpověděl.\n\n{lines}\n\n{_next_step(attempts)}"
+
+
+def _next_step(attempts: list[Attempt]) -> str:
+    """The one thing to do about it. A list of failures alone left the user
+    guessing whether to wait, retry or go fix a key."""
+    rejected = [
+        _short(a.provider)
+        for a in attempts
+        if isinstance(a.error, litellm.AuthenticationError)
+    ]
+    if rejected:
+        names = ", ".join(dict.fromkeys(rejected))
+        return f"Co s tím: zkontroluj klíč ({names}) v „API klíče“ — tlačítko Otestovat řekne víc."
+    return (
+        "Co s tím: zkus to za chvíli znovu — limity free tierů se obnovují. "
+        "Klíč dalšího providera v „API klíče“ dá routeru kam uhnout."
+    )
 
 
 def _supported_kwargs(model: str, **kwargs) -> dict:
