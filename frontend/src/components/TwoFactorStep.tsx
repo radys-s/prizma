@@ -38,10 +38,18 @@ export function TwoFactorStep({ challenge, onVerified, onBack }: Props) {
   const [cooldown, setCooldown] = useState(isApp ? 0 : RESEND_COOLDOWN);
 
   const boxes = useRef<Array<HTMLInputElement | null>>([]);
+  // Bumped after a wrong code. The focus has to wait for the render that
+  // enables the boxes again — a disabled input ignores focus(), which used to
+  // close the phone keyboard after every wrong code.
+  const [refocus, setRefocus] = useState(0);
 
   useEffect(() => {
     boxes.current[0]?.focus();
   }, []);
+
+  useEffect(() => {
+    if (refocus > 0 && !busy) boxes.current[0]?.focus();
+  }, [refocus, busy]);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -89,8 +97,22 @@ export function TwoFactorStep({ challenge, onVerified, onBack }: Props) {
     place(index, event.clipboardData.getData("text"));
   }
 
-  async function submit(event: FormEvent) {
+  // The sixth digit is the submit: a full code leaves nothing to decide. The
+  // ref keeps one code from going out twice (a re-render, StrictMode), and a
+  // failed code clears the boxes, so the next try needs six new digits.
+  const tried = useRef("");
+  useEffect(() => {
+    if (useRecovery || code.length !== DIGITS || tried.current === code) return;
+    tried.current = code;
+    void verify();
+  }, [code, useRecovery]);
+
+  function submit(event: FormEvent) {
     event.preventDefault();
+    void verify();
+  }
+
+  async function verify() {
     if (!complete || busy) return;
     setBusy(true);
     setError("");
@@ -101,9 +123,10 @@ export function TwoFactorStep({ challenge, onVerified, onBack }: Props) {
       onVerified();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ověření selhalo.");
+      tried.current = "";
       setDigits(Array(DIGITS).fill(""));
       setRecovery("");
-      boxes.current[0]?.focus();
+      setRefocus((n) => n + 1);
     } finally {
       setBusy(false);
     }
