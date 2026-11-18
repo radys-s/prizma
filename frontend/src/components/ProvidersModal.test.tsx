@@ -31,6 +31,7 @@ const PROVIDERS: Provider[] = [
   provider("jina", "Jina", ["search"]),
   provider("exa", "Exa", ["search"]),
   provider("gemini", "Gemini", ["general", "long_context"]),
+  { ...provider("wikipedia", "Wikipedia", ["search"]), keyless: true },
 ];
 
 const TOOLS: ToolsSettings = {
@@ -93,6 +94,12 @@ describe("ProvidersModal", () => {
     renderModal();
     const answering = screen.getByRole("region", { name: /Modely na odpovědi/ });
     expect(within(answering).getByText(/1 ze 2/)).toBeTruthy();
+  });
+
+  it("shows the keyless searcher as always on, with no key field", () => {
+    renderModal();
+    expect(screen.getByText(/Vždy zapnuto/)).toBeTruthy();
+    expect(screen.queryByLabelText("API klíč pro Wikipedia")).toBeNull();
   });
 
   it("does not claim the key lives in Credential Manager", () => {

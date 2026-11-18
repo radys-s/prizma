@@ -23,6 +23,7 @@ import {
   testProviderKey,
 } from "../lib/api";
 import type { AuthState, Provider, ToolsSettings } from "../lib/types";
+import { canAnswer } from "../lib/keys";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { AccountSection } from "./AccountSection";
 import { LocalModelSection } from "./LocalModelSection";
@@ -47,6 +48,8 @@ interface KeyGroup {
   notes: string[];
   requiresCard: boolean;
   configured: boolean;
+  keyless: boolean;
+  fromEnv: boolean;
 }
 
 function groupByKey(providers: Provider[]): KeyGroup[] {
@@ -64,7 +67,9 @@ function groupByKey(providers: Provider[]): KeyGroup[] {
         capabilities: [...p.capabilities],
         notes: p.notes ? [p.notes] : [],
         requiresCard: p.requires_card,
-        configured: p.configured,
+        configured: p.configured || p.keyless === true,
+        keyless: p.keyless === true,
+        fromEnv: p.from_env === true,
       });
       continue;
     }
@@ -76,6 +81,7 @@ function groupByKey(providers: Provider[]): KeyGroup[] {
     if (p.notes && !existing.notes.includes(p.notes)) existing.notes.push(p.notes);
     existing.requiresCard ||= p.requires_card;
     existing.configured ||= p.configured;
+    existing.fromEnv ||= p.from_env === true;
   }
 
   return [...groups.values()];
@@ -131,8 +137,8 @@ export function ProvidersModal({
   // Search-only keys do not count towards the minimum, so they get their own
   // section below the ones that do — mixed together, seven search cards stood
   // between the first answering key and the second.
-  const answering = groups.filter((g) => g.capabilities.some((c) => c !== "search"));
-  const searching = groups.filter((g) => g.capabilities.every((c) => c === "search"));
+  const answering = groups.filter(canAnswer);
+  const searching = groups.filter((g) => !canAnswer(g));
   const answeringReady = answering.filter((g) => g.configured).length;
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
@@ -336,7 +342,7 @@ export function ProvidersModal({
     const result = results[group.keyId];
     // Once a key is stored there is nothing to type, so the field goes
     // away until "Změnit klíč" — or until the key is deleted.
-    const showInput = !group.configured || editing[group.keyId] === true;
+    const showInput = !group.keyless && (!group.configured || editing[group.keyId] === true);
 
     return (
       <div
@@ -348,7 +354,7 @@ export function ProvidersModal({
           <span className="provider-name">{group.name}</span>
           <span className="provider-dot" aria-hidden="true" />
           <span className="provider-state">
-            {group.configured ? "Nastaveno" : "Chybí klíč"}
+            {group.keyless ? "Bez klíče" : group.configured ? "Nastaveno" : "Chybí klíč"}
           </span>
           <span className="spacer" />
           <span className={`chip${group.requiresCard ? " warn" : ""}`}>
@@ -448,11 +454,18 @@ export function ProvidersModal({
                 </button>
               )}
             </>
+          ) : group.keyless ? (
+            <span className="key-stored">
+              <CircleCheck size={14} />
+              Vždy zapnuto — klíč nepotřebuje.
+            </span>
           ) : (
             <>
               <span className="key-stored">
                 <CircleCheck size={14} />
-                Klíč je uložený (šifrovaně)
+                {group.fromEnv
+                  ? "Klíč je z proměnné prostředí na serveru."
+                  : "Klíč je uložený (šifrovaně)."}
               </span>
               <span className="spacer" />
               <button
@@ -464,23 +477,29 @@ export function ProvidersModal({
                 {busyLabel === "test" && <Loader size={14} className="spin" />}
                 Otestovat
               </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setEdit(group.keyId, true)}
-                disabled={busyLabel !== undefined}
-              >
-                Změnit klíč
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                onClick={() => remove(group)}
-                disabled={busyLabel !== undefined}
-              >
-                {busyLabel === "delete" && <Loader size={14} className="spin" />}
-                Smazat klíč
-              </button>
+              {/* An environment key wins over the database, so changing or
+                  deleting it here would be refused — it lives on the server. */}
+              {!group.fromEnv && (
+                <>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setEdit(group.keyId, true)}
+                    disabled={busyLabel !== undefined}
+                  >
+                    Změnit klíč
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={() => remove(group)}
+                    disabled={busyLabel !== undefined}
+                  >
+                    {busyLabel === "delete" && <Loader size={14} className="spin" />}
+                    Smazat klíč
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
@@ -538,7 +557,7 @@ export function ProvidersModal({
               <span className={`key-count${answeringReady < minSlots ? " short" : ""}`}>
                 {answeringReady < minSlots
                   ? `${answeringReady} ze ${minSlots} potřebných`
-                  : `${answeringReady} připojeno`}
+                  : `${answeringReady} ${answeringReady < 5 ? "připojené" : "připojených"}`}
               </span>
             </h3>
             <p className="key-section-hint">
