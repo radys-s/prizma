@@ -48,18 +48,20 @@ RCE v Next.js. Projekt prošel `npm audit` / OSV auditem a zranitelné závislos
 **Changes**
 - **#13 Key dialog opens on the answering keys.** "API klíče" opened on account settings. The first key card was 2,302 px down and the second answering model 4,130 px down, behind seven search-only cards. Now answering keys come first with a "1 ze 2 potřebných" count and search keys get their own optional section. The header and sidebar counters count answering keys only, as the router does; before, a search key hid the "need two" banner while chat still failed. The keyless Wikipedia card shows as always on, environment keys say so, and the stale "Credential Manager" line is gone.
 - **#14 Failed answers say what to do next.** "Žádný provider neodpověděl" rendered as one run-on line and stopped there. Now it keeps one failure per line, ends with "Co s tím: …" (fix the rejected key; wait only when every failure was temporary; otherwise add another provider's key), and offers an "API klíče" button.
-- **#15 Limit toasts stop claiming another model answers.** The toasts said "Odpovídá jiný model" even when none did, and covered the Send button. Now they say "Router ho přeskakuje…", sit under the top bar, and are dropped when the whole turn fails (the error bubble already lists the limits).
+- **#15 Limit toasts stop claiming another model answers.** The toasts said "Odpovídá jiný model" even when none did, and covered the Send button. Now they say "Router ho přeskakuje…", sit under the top bar, hide after 12 s, and are dropped when the whole turn fails (the error bubble already lists the limits).
 - **#16 Touch targets reach 44 px on phones.** Send was 34 px, effort segments 24, pickers 30, key chip 24, icon buttons 40. All are now ≥ 44 under `hover: none`. Rows that sit close together get real height, not overlapping hit areas.
-- **#17 Login code submits on the sixth digit.** Removes the extra click on every e-mail/TOTP sign-in.
+- **#17 Login code submits on the sixth digit.** Removes the extra click on every e-mail/TOTP sign-in. After a wrong code the cursor returns to the first box; before, it was lost, which closed the phone keyboard.
 
 **Numbers**
 - First key card: 2,302 → 71 px from the top of the dialog. Second answering model: 4,130 → 296 px.
 - From a key error to the key dialog: sidebar + click + scroll → 1 click.
 - Sign-in code screen: 6 digits + click → 6 digits.
 - Phone controls under 44 px: about 15 → 0 (only "Proč tenhle model?" is 42).
-- Tests: frontend 20 → 36, backend 177 → 182. All new tests failed before their fix.
+- Tests: frontend 20 → 38, backend 177 → 183. Each new test was written to fail first. The one exception, the timeout-wording test from a review nit, was added together with its fix.
 
-**Review:** a second Claude account reviewed every PR read-only. It found answering-key counters that disagreed with the router, a "wait" hint shown for errors that waiting cannot fix, and a tautological test. All were fixed before merge.
+**Review:** a second Claude account reviewed every PR read-only. It found answering-key counters that disagreed with the router, a "wait" hint shown for errors that waiting cannot fix, countdown toasts that could stay up for an hour, chip hit areas overlapping a wrapping row, focus lost after a wrong code, and a tautological test. All were fixed before merge.
+
+**Verified on merged main** (my own instance on :8020): first key card 71 px down, "2 připojené", chip "2/10". A 429 + 401 turn gives one bubble with "Co s tím" and no toasts, and its "API klíče" button opens the dialog.
 
 **What worked:** a stub provider with per-provider modes (`{"groq":"429"}`) made every error journey reproducible without real keys. Serving the built frontend from my own backend kept a single origin and never touched the live instance.
 
