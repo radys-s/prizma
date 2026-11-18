@@ -1504,6 +1504,9 @@ button.conversation-item:focus-visible {
 .message-error-text {
   flex: 1;
   min-width: 0;
+  /* The backend sends one failure per line and the next step after a blank
+     line; collapsed, it read as one run-on sentence. */
+  white-space: pre-line;
 }
 
 /* Full-width row under the text, indented past the icon, so the button has
@@ -1511,6 +1514,9 @@ button.conversation-item:focus-visible {
 .message-error-actions {
   flex-basis: 100%;
   padding-left: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* Vidět pořád, jen tlumeně. Skryté na hover to znamenalo, že kdo neví, že tam
@@ -3406,6 +3412,36 @@ button.conversation-item:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* Klíče jsou první věc v dialogu: bez dvou na odpovědi appka mlčí. Karty
+   v sekci si drží stejný rozestup jako dřív přímo v těle dialogu. */
+.key-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.key-section h3 {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.key-count {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.key-count.short {
+  color: var(--warning);
+}
+
+.key-section-hint {
+  margin: -4px 0 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
 }
 
 /* ---------------------------------------------------- karty providerů ---- */

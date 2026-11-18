@@ -89,6 +89,9 @@ def list_providers():
             # to say *where* the key lives instead of offering an edit that
             # would be accepted and then ignored.
             "from_env": keystore.is_shadowed(p.credential_id),
+            # Needs no key at all; the dialog shows it as always on instead of
+            # offering a key field it would never use.
+            "keyless": p.keyless,
         }
         # The local endpoint is deliberately absent. This list drives the key
         # dialog, and a model on this machine has no key to paste, no signup
