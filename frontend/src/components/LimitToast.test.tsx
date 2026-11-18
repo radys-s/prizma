@@ -6,7 +6,8 @@
  */
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { LimitToasts, withoutNotices, type LimitNoticeItem } from "./LimitToast";
 
 function item(until: number | null): LimitNoticeItem {
@@ -24,6 +25,24 @@ describe("LimitToasts", () => {
     render(<LimitToasts items={[item(Date.now() + 5 * 60_000)]} onDismiss={() => {}} />);
     expect(screen.getByText(/za 5 min/)).toBeTruthy();
     expect(screen.queryByText(/odpovídá jiný model/i)).toBeNull();
+  });
+});
+
+describe("LimitToasts lifetime", () => {
+  // A toast with a known wait used to stay until the countdown ended — up to
+  // an hour on top of the conversation. It now leaves like the others.
+  it("goes away on its own even when the wait is long", () => {
+    vi.useFakeTimers();
+    try {
+      const onDismiss = vi.fn();
+      render(<LimitToasts items={[item(Date.now() + 30 * 60_000)]} onDismiss={onDismiss} />);
+      act(() => {
+        vi.advanceTimersByTime(13_000);
+      });
+      expect(onDismiss).toHaveBeenCalledWith("groq:m");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

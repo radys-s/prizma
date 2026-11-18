@@ -814,7 +814,9 @@ function ChatApp({ accountLabel, onSignedOut, auth, onAuthChanged }: ChatAppProp
           ? [...settled, { role: "assistant" as const, content: msg, error: true }]
           : patchLast(settled, (m) => ({ ...m, content: msg, error: true }));
       });
-      // "Nobody answered" lists every limit it hit, wait time included.
+      // "Nobody answered" lists every limit it hit, wait time included. The
+      // sentence is written by `_summarize` in backend/app/providers/client.py,
+      // which carries the matching note — reword both together.
       if (msg.startsWith("Žádný provider neodpověděl")) {
         setLimits((prev) => withoutNotices(prev, raisedLimits));
       }

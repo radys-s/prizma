@@ -46,10 +46,11 @@ function remaining(until: number | null, now: number): string {
 }
 
 /**
- * Bez známého času oznámení po chvíli samo zmizí. S časem zůstane, dokud
- * neodtiká — mizí přesně ve chvíli, kdy přestane platit.
+ * Každé oznámení po chvíli samo zmizí — i to s odpočtem. Dřív zůstávalo, dokud
+ * neodtikalo, takže hodinový limit znamenal hodinu karty přes začátek
+ * konverzace. Čas, kdy to zkusit znovu, říká i bublina s chybou.
  */
-const BLIND_TIMEOUT_MS = 12000;
+const VISIBLE_MS = 12000;
 
 function LimitCard({
   item,
@@ -61,18 +62,18 @@ function LimitCard({
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    if (item.until === null) {
-      const timer = window.setTimeout(() => onDismiss(item.id), BLIND_TIMEOUT_MS);
-      return () => window.clearTimeout(timer);
-    }
-    // Vteřinový tik jen dokud je co odpočítávat. Interval, který běží dál po
-    // vypršení, by byl tichý žrout snímků na stránce, kde se stejně nic nemění.
-    const timer = window.setInterval(() => {
+    const hide = window.setTimeout(() => onDismiss(item.id), VISIBLE_MS);
+    if (item.until === null) return () => window.clearTimeout(hide);
+    // Vteřinový tik jen dokud je karta vidět a je co odpočítávat.
+    const tick = window.setInterval(() => {
       const next = Date.now();
       setNow(next);
       if (next >= (item.until as number)) onDismiss(item.id);
     }, 1000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(hide);
+      window.clearInterval(tick);
+    };
   }, [item.id, item.until, onDismiss]);
 
   const left = item.until === null ? item.wait : remaining(item.until, now);
